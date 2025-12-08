@@ -34,6 +34,8 @@ func NewRouter(log *slog.Logger) *gin.Engine {
 	eventsRepo := memory.NewEventsRepo()
 	eventsHandler := handlers.NewEventsHandler(eventsRepo)
 	r.POST("/events", eventsHandler.CreateEvent)
+	r.GET("/events",eventsHandler.ListEvents)
+	r.GET("/events/:id",eventsHandler.GetById)
 
 	return r
 }

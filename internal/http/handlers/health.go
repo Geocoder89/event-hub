@@ -1,14 +1,22 @@
 package handlers
 
-import "github.com/gin-gonic/gin"
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
 
 
-type HealthHandler struct {}
+type HealthHandler struct {
+	ping func() error
+}
 
 
 // create a new instance of the health handler
-func NewHealthHandler() *HealthHandler {
-	return &HealthHandler{}
+func NewHealthHandler(ping func() error) *HealthHandler {
+	return &HealthHandler{
+		ping: ping,
+	}
 }
 
 
@@ -17,7 +25,16 @@ func (h *HealthHandler) Healthz(ctx *gin.Context) {
 }
 
 func (h *HealthHandler) Readyz(ctx *gin.Context) {
-	// Day 1 phase : always ready, we look at deeper things like DB connection
+	// DB connection check
+	if h.ping != nil {
+		err := h.ping()
 
-	ctx.JSON(200, gin.H{"status": "ready"})
+		if err != nil {
+			RespondError(ctx,http.StatusServiceUnavailable,"not_ready","not_available", gin.H{"dependency":"postgres"})
+			return 
+		}
+
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"status": "ready"})
 }

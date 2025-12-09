@@ -9,19 +9,31 @@ import (
 	"time"
 
 	"github.com/geocoder89/eventhub/internal/config"
+	"github.com/geocoder89/eventhub/internal/db"
 	httpx "github.com/geocoder89/eventhub/internal/http"
 	"github.com/geocoder89/eventhub/internal/observability"
+	"github.com/joho/godotenv"
 )
 
 func main() {
 	// Load the config set up
+	_ = godotenv.Load()
 	cfg := config.Load()
 
 	// start up the observability logger
 	log := observability.NewLogger(cfg.Env)
 
+	pool, err := db.NewPool(cfg.DBURL)
+
+	if err != nil {
+		log.Error("db connection failed", "err", err)
+		os.Exit(1)
+	}
+
+	defer pool.Close()
+
 	// set up routers with the log
-	router := httpx.NewRouter(log)
+	router := httpx.NewRouter(log,pool)
 
 	// server set up
 	srv := &http.Server{

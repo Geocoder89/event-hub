@@ -7,7 +7,8 @@ import (
 	"time"
 
 	"github.com/geocoder89/eventhub/internal/http/handlers"
-	"github.com/geocoder89/eventhub/internal/repo/memory"
+	// "github.com/geocoder89/eventhub/internal/repo/memory"
+	"github.com/geocoder89/eventhub/internal/repo/postgres"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -46,7 +47,10 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool) *gin.Engine {
 
 	// events stored in memory for now
 
-	eventsRepo := memory.NewEventsRepo()
+	// eventsRepo := memory.NewEventsRepo()
+	// change to postgres
+
+	eventsRepo := postgres.NewEventsRepo(pool)
 	eventsHandler := handlers.NewEventsHandler(eventsRepo)
 	r.POST("/events", eventsHandler.CreateEvent)
 	r.GET("/events",eventsHandler.ListEvents)

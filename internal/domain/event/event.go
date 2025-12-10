@@ -1,6 +1,9 @@
 package event
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 
 
@@ -14,6 +17,8 @@ type Event struct {
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
+
+var ErrNotFound = errors.New("event not found")
 
 type CreateEventRequest struct {
 	Title string `json:"title" binding:"required,min=2"` // required and minimum must be 2

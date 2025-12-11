@@ -33,7 +33,7 @@ func main() {
 	defer pool.Close()
 
 	// set up routers with the log
-	router := httpx.NewRouter(log,pool)
+	router := httpx.NewRouter(log, pool)
 
 	// server set up
 	srv := &http.Server{
@@ -57,7 +57,6 @@ func main() {
 		}
 	}()
 
-
 	// Graceful shutdown
 
 	stop := make(chan os.Signal, 1)
@@ -72,7 +71,7 @@ func main() {
 
 		ctxTimeOut := 10 * time.Second
 
-		ctx,cancel :=config.WithTimeout(ctxTimeOut)
+		ctx, cancel := config.WithTimeout(ctxTimeOut)
 
 		defer cancel()
 
@@ -81,7 +80,7 @@ func main() {
 		if err != nil {
 			log.Error("graceful shutdown failed", "err", err)
 
-			return 
+			return
 		}
 	}()
 

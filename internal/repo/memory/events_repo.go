@@ -26,18 +26,17 @@ func NewEventsRepo() *EventsRepo {
 	}
 }
 
-
-func (r *EventsRepo) Create(req event.CreateEventRequest)(event.Event,error) {
+func (r *EventsRepo) Create(req event.CreateEventRequest) (event.Event, error) {
 	now := time.Now()
-	e := event.Event {
-		ID: uuid.NewString(),
-		Title: req.Title,
+	e := event.Event{
+		ID:          uuid.NewString(),
+		Title:       req.Title,
 		Description: req.Description,
-		City: req.City,
-		StartAt: req.StartAt,
-		Capacity: req.Capacity,
-		CreatedAt: now,
-		UpdatedAt: now,
+		City:        req.City,
+		StartAt:     req.StartAt,
+		Capacity:    req.Capacity,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 	r.mu.Lock()
 	r.items[e.ID] = e
@@ -46,16 +45,15 @@ func (r *EventsRepo) Create(req event.CreateEventRequest)(event.Event,error) {
 	return e, nil
 }
 
-func (r *EventsRepo) GetByID(id string)(event.Event, error) {
-r.mu.RLock()
-e, ok := r.items[id]
-r.mu.RUnlock()
+func (r *EventsRepo) GetByID(id string) (event.Event, error) {
+	r.mu.RLock()
+	e, ok := r.items[id]
+	r.mu.RUnlock()
 
-
-if !ok {
-	return event.Event{}, ErrNotFound
-}
-return e, nil
+	if !ok {
+		return event.Event{}, ErrNotFound
+	}
+	return e, nil
 }
 
 func (r *EventsRepo) List() ([]event.Event, error) {
@@ -68,14 +66,12 @@ func (r *EventsRepo) List() ([]event.Event, error) {
 	}
 	// a good improvement is to handle stable ordering. more or less ordering by startAt
 
-	sort.Slice(out,func(i, j int) bool {
+	sort.Slice(out, func(i, j int) bool {
 		return out[i].StartAt.Before(out[j].StartAt)
 	})
 
 	// at this stage we expect a value so we return it
 
-	return out,nil
+	return out, nil
 
 }
-
-

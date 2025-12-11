@@ -8,9 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
-
 const requestIDHeader = "X-Request-Id"
-
 
 func RequestID() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
@@ -21,7 +19,7 @@ func RequestID() gin.HandlerFunc {
 		if id == "" {
 			id = uuid.NewString()
 		}
-		// 
+		//
 		ctx.Writer.Header().Set(requestIDHeader, id)
 
 		ctx.Set("request_id", id)
@@ -39,12 +37,11 @@ func RequestLogger(log *slog.Logger) gin.HandlerFunc {
 
 		ctx.Next()
 
-
 		lat := time.Since(start)
 		status := ctx.Writer.Status()
 
-	reqID, _ :=	ctx.Get("request_id")
+		reqID, _ := ctx.Get("request_id")
 
-	log.Info("request", "method",method, "path", path, "status", status, "latency_ms", lat.Milliseconds(),"request_id", reqID)
+		log.Info("request", "method", method, "path", path, "status", status, "latency_ms", lat.Milliseconds(), "request_id", reqID)
 	}
 }

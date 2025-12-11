@@ -5,8 +5,6 @@ import (
 	"os"
 )
 
-
-
 func NewLogger(env string) *slog.Logger {
 	level := slog.LevelInfo
 

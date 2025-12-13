@@ -54,6 +54,7 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool) *gin.Engine {
 	r.POST("/events", eventsHandler.CreateEvent)
 	r.GET("/events", eventsHandler.ListEvents)
 	r.GET("/events/:id", eventsHandler.GetEventById)
-
+	r.PUT("/events/:id", eventsHandler.UpdateEvent)
+	r.DELETE("/events/:id", eventsHandler.DeleteEvent)
 	return r
 }

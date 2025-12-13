@@ -16,6 +16,15 @@ type Event struct {
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
+// with pointers if optional, it will be nil
+type ListEventsFilter struct {
+	City   *string
+	From   *time.Time
+	To     *time.Time
+	Limit  int
+	Offset int
+}
+
 var ErrNotFound = errors.New("event not found")
 
 type CreateEventRequest struct {
@@ -24,4 +33,13 @@ type CreateEventRequest struct {
 	City        string    `json:"city"`
 	StartAt     time.Time `json:"startAt" binding:"required"`       // required
 	Capacity    int       `json:"capacity" binding:"required,gt=0"` // required and must be greater than 0
+}
+
+// a full update payload, might switch to a patch which optionally provides means for partial updates.
+type UpdateEventRequest struct {
+	Title       string    `json:"title" binding:"required,min=3"`
+	Description string    `json:"description" binding:"required"`
+	City        string    `json:"city" binding:"required"`
+	StartAt     time.Time `json:"startAt" binding:"required"`
+	Capacity    int       `json:"capacity" binding:"required,min=1"`
 }

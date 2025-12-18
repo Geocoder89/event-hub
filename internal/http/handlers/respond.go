@@ -49,3 +49,7 @@ func RespondNotFound(ctx *gin.Context, message string) {
 func RespondInternal(ctx *gin.Context, message string) {
 	RespondError(ctx, http.StatusInternalServerError, "internal_error", message, nil)
 }
+
+func RespondConflict(ctx *gin.Context, code, message string) {
+	RespondError(ctx,http.StatusConflict, code,message,nil)
+}

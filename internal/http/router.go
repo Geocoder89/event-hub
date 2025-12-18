@@ -49,12 +49,21 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool) *gin.Engine {
 	// eventsRepo := memory.NewEventsRepo()
 	// change to postgres
 
+	// wire up repositories
 	eventsRepo := postgres.NewEventsRepo(pool)
+	registrationRepo := postgres.NewRegistrationsRepo(pool)
+
+	// Wire up more handler
 	eventsHandler := handlers.NewEventsHandler(eventsRepo)
+	registrationHandler := handlers.NewRegistrationHandler(registrationRepo)
+
+
 	r.POST("/events", eventsHandler.CreateEvent)
 	r.GET("/events", eventsHandler.ListEvents)
 	r.GET("/events/:id", eventsHandler.GetEventById)
 	r.PUT("/events/:id", eventsHandler.UpdateEvent)
 	r.DELETE("/events/:id", eventsHandler.DeleteEvent)
+	// event registration route
+	r.POST("/events/:id/register",registrationHandler.Register)
 	return r
 }

@@ -137,3 +137,82 @@ func (repo *RegistrationRepo) Create(ctx context.Context, req registration.Creat
 	// }
 	// return reg, nil
 }
+
+
+func (repo *RegistrationRepo)ListByEvent(ctx context.Context,eventID string ) (regs []registration.Registration,err error){
+	rows, err := repo.pool.Query(ctx,
+	`
+	SELECT id, event_id,name, email, created_at,updated_at
+	FROM registrations
+	WHERE event_id = $1
+	ORDER BY created_at ASC, id ASC
+	`,
+	eventID,
+	
+	)
+
+	if err != nil {
+		return
+	}
+
+	defer rows.Close()
+
+	regs = make([]registration.Registration,0)
+
+	for rows.Next(){
+		var r registration.Registration
+
+		err = rows.Scan(&r.ID, &r.EventID, &r.Name, &r.Email,&r.CreatedAt,&r.UpdatedAt)
+
+		if err != nil {
+			return
+		}
+		regs = append(regs, r)
+	}
+
+	err = rows.Err()
+
+	if err != nil {
+		return 
+	}
+
+	// in the event i want a 404 if the event itself does not exist
+
+	if len(regs) == 0 {
+		// check if event exists at all
+		var dummy string
+
+		err = repo.pool.QueryRow(ctx,`SELECT id FROM events WHERE id = $1`,eventID).Scan(&dummy)
+		if errors.Is(err,pgx.ErrNoRows) {
+			err = event.ErrNotFound
+
+			return 
+		}
+
+		if err != nil {
+			return
+		}
+	}
+
+	return 
+}
+
+// Delete removes a single registration for an event
+
+func(repo *RegistrationRepo)Delete(ctx context.Context, eventID,registrationID string) (err error) {
+	tag, err := repo.pool.Exec(ctx, `DELETE FROM registrations WHERE id = $1 AND event_id = $2`,registrationID, eventID)
+
+	if err != nil {
+		return
+	}
+
+	if tag.RowsAffected() == 0 {
+		err = registration.ErrNotFound
+
+		return 
+	}
+
+	return
+}
+
+

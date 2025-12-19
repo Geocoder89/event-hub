@@ -8,8 +8,10 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
+
 	apphttp "github.com/geocoder89/eventhub/internal/http"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -29,8 +31,12 @@ func setupTestRouter(t *testing.T) (*gin.Engine, *pgxpool.Pool) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
-	// a fixed dsn for integration tests
-	dsn := "postgres://eventhub:eventhub@127.0.0.1:5433/eventhub?sslmode=disable"
+
+	  dsn := os.Getenv("TEST_DB_DSN")
+    if dsn == "" {
+        // default for local dev (your docker-compose)
+        dsn = "postgres://eventhub:eventhub@127.0.0.1:5433/eventhub?sslmode=disable"
+    }
 
 	ctx := context.Background()
 
@@ -99,6 +105,7 @@ func TestRegisterIntegration_HappyPath(t *testing.T) {
 
 	//  for each run make sure, there are no data in the db.
 	resetDB(t, pool)
+	defer resetDB(t, pool)
 	eventID := seedEvent(t, pool, 2)
 
 	body := `{
@@ -141,6 +148,7 @@ func TestRegisterIntegration_HappyPath(t *testing.T) {
 func TestRegisterIntegration_DuplicateEmail(t *testing.T) {
 	router, pool := setupTestRouter(t)
 	resetDB(t, pool)
+	defer resetDB(t, pool)
 
 	eventID := seedEvent(t, pool, 2)
 
@@ -150,8 +158,8 @@ func TestRegisterIntegration_DuplicateEmail(t *testing.T) {
 	 }`
 
 	//  first registration should succeed
-	req1 := httptest.NewRequest(http.MethodPost,"/events/"+eventID+"/register", bytes.NewBufferString(body))
-	req1.Header.Set("Content-Type","application/json")
+	req1 := httptest.NewRequest(http.MethodPost, "/events/"+eventID+"/register", bytes.NewBufferString(body))
+	req1.Header.Set("Content-Type", "application/json")
 	w1 := httptest.NewRecorder()
 	router.ServeHTTP(w1, req1)
 	if w1.Code != http.StatusCreated {
@@ -160,8 +168,8 @@ func TestRegisterIntegration_DuplicateEmail(t *testing.T) {
 
 	// second registration with the same email should record already registered with email
 
-	req2 := httptest.NewRequest(http.MethodPost,"/events/"+eventID+"/register", bytes.NewBufferString(body))
-	req2.Header.Set("Content-Type","application/json")
+	req2 := httptest.NewRequest(http.MethodPost, "/events/"+eventID+"/register", bytes.NewBufferString(body))
+	req2.Header.Set("Content-Type", "application/json")
 	w2 := httptest.NewRecorder()
 	router.ServeHTTP(w2, req2)
 
@@ -182,12 +190,11 @@ func TestRegisterIntegration_DuplicateEmail(t *testing.T) {
 	}
 }
 
-
-
 func TestRegisterIntegration_EventFull(t *testing.T) {
 	router, pool := setupTestRouter(t)
-	resetDB(t, pool)
 
+	resetDB(t, pool)
+	defer resetDB(t, pool)
 	// capacity = 1
 	eventID := seedEvent(t, pool, 1)
 
@@ -224,7 +231,6 @@ func TestRegisterIntegration_EventFull(t *testing.T) {
 	}
 }
 
-
 func TestRegisterIntegration_EventNotFound(t *testing.T) {
 	router, _ := setupTestRouter(t)
 
@@ -243,4 +249,3 @@ func TestRegisterIntegration_EventNotFound(t *testing.T) {
 	}
 
 }
-

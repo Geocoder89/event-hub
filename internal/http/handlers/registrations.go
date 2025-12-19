@@ -8,11 +8,14 @@ import (
 	"time"
 
 	"github.com/geocoder89/eventhub/internal/config"
+	"github.com/geocoder89/eventhub/internal/domain/event"
 	"github.com/geocoder89/eventhub/internal/domain/registration"
 	"github.com/gin-gonic/gin"
 )
 type RegistrationCreator interface {
 	Create(ctx context.Context, req registration.CreateRegistrationRequest)(registration.Registration, error)
+	ListByEvent(ctx context.Context, eventID string)([]registration.Registration, error)
+	Delete(ctx context.Context, eventID, registrationID string) error
 }
 
 type RegistrationHandler struct {
@@ -64,4 +67,50 @@ func (h *RegistrationHandler) Register(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusCreated,reg)
+}
+
+func (h *RegistrationHandler) ListForEvent (ctx *gin.Context){
+	eventID := ctx.Param("id")
+
+	cctx, cancel := config.WithTimeout(2 * time.Second)
+	defer cancel()
+
+	regs, err := h.repo.ListByEvent(cctx,eventID)
+	if err != nil {
+		if errors.Is(err,event.ErrNotFound) {
+			RespondNotFound(ctx,"Event not found")
+			return
+		}
+
+		RespondInternal(ctx,"Could not list registrations")
+		return
+	}
+
+	ctx.JSON(http.StatusOK,gin.H{
+		"eventId": eventID,
+		"count": len(regs),
+		"registrations": regs,	
+	})
+}
+
+
+func (h *RegistrationHandler) Cancel(ctx *gin.Context) {
+    eventID := ctx.Param("id")
+    regID := ctx.Param("registrationId")
+
+    cctx, cancel := config.WithTimeout(2 * time.Second)
+    defer cancel()
+
+    err := h.repo.Delete(cctx, eventID, regID)
+    if err != nil {
+        if errors.Is(err, registration.ErrNotFound) {
+            RespondNotFound(ctx, "Registration not found")
+            return
+        }
+
+        RespondInternal(ctx, "Could not cancel registration")
+        return
+    }
+
+    ctx.Status(http.StatusNoContent)
 }

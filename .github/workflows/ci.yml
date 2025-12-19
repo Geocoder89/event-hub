@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: eventhub
+          POSTGRES_PASSWORD: eventhub
+          POSTGRES_DB: eventhub
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U eventhub -d eventhub"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      APP_ENV: test
+
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: eventhub
+      DB_PASSWORD: eventhub
+      DB_NAME: eventhub
+      DB_SSLMODE: disable
+
+      # Integration tests DSN (used by setupTestRouter)
+      TEST_DB_DSN: postgres://eventhub:eventhub@localhost:5432/eventhub?sslmode=disable
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Install Goose
+        run: go install github.com/pressly/goose/v3/cmd/goose@latest
+
+      - name: Wait for Postgres
+        run: |
+          for i in {1..20}; do
+            pg_isready -h localhost -p 5432 -U eventhub -d eventhub && exit 0
+            echo "Postgres not ready yet... ($i)"
+            sleep 2
+          done
+          echo "Postgres did not become ready in time"
+          exit 1
+
+      - name: Run DB migrations
+        run: |
+          goose -dir db/migrations postgres \
+            "postgres://$DB_USER:$DB_PASSWORD@localhost:$DB_PORT/$DB_NAME?sslmode=$DB_SSLMODE" up
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run tests
+        run: go test ./... -v

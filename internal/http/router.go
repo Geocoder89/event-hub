@@ -57,13 +57,14 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool) *gin.Engine {
 	eventsHandler := handlers.NewEventsHandler(eventsRepo)
 	registrationHandler := handlers.NewRegistrationHandler(registrationRepo)
 
-
 	r.POST("/events", eventsHandler.CreateEvent)
 	r.GET("/events", eventsHandler.ListEvents)
 	r.GET("/events/:id", eventsHandler.GetEventById)
 	r.PUT("/events/:id", eventsHandler.UpdateEvent)
 	r.DELETE("/events/:id", eventsHandler.DeleteEvent)
 	// event registration route
-	r.POST("/events/:id/register",registrationHandler.Register)
+	r.POST("/events/:id/register", registrationHandler.Register)
+	r.GET("/events/:id/registrations", registrationHandler.ListForEvent)
+	r.DELETE("/events/:id/registrations/:registrationId", registrationHandler.Cancel)
 	return r
 }

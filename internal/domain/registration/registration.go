@@ -3,7 +3,6 @@ package registration
 import (
 	"errors"
 	"time"
-
 	"github.com/google/uuid"
 )
 
@@ -22,6 +21,7 @@ type Registration struct {
 var ErrAlreadyRegistered = errors.New("registration already exists")
 // error if event is full
 var ErrEventFull = errors.New("event is full")
+var ErrNotFound          = errors.New("registration not found")
 type CreateRegistrationRequest struct {
 	EventID string `json:"-"`
 	Name string `json:"name" binding:"required,min=2"`

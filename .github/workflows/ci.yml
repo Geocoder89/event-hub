@@ -1,4 +1,4 @@
-eaname: CI
+name: CI
 
 on:
   push:
@@ -75,5 +75,5 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v2.7.2
+          version: latest
           args: ./...

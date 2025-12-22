@@ -47,3 +47,6 @@ migrate-down: check-db-env
 
 test:
 	go test ./... -v
+
+lint:
+	golangci-lint run ./...

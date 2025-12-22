@@ -12,7 +12,7 @@ import (
 
 // errors not found
 
-var ErrNotFound = errors.New("Event not found")
+var ErrNotFound = errors.New("event not found")
 
 type EventsRepo struct {
 	mu    sync.RWMutex

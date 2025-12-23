@@ -5,24 +5,21 @@ run:
   tests: true
 
 linters:
-  disable-all: true
+  # v2 replacement for `disable-all: true`
+  # (means: start from no linters, then enable just the ones below)
+  default: none
   enable:
     - govet
     - staticcheck
     - ineffassign
     - errcheck
 
-  # Replaces issues.exclude-dirs + issues.exclude-use-default
+  # v2 replacement for issues.exclude-dirs / exclude-use-default
   exclusions:
     paths:
       - tmp
       - vendor
-    # optional presets; you can drop this if you want everything
-    # presets:
-    #   - common-false-positives
-    #   - legacy
-    #   - std-error-handling
 
-issues:
-  # keep defaults simple; add knobs later if you want
+output:
+  # v2 location for uniq-by-line (moved from `issues`)
   uniq-by-line: true

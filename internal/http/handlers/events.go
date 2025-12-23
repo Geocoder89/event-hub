@@ -14,14 +14,14 @@ import (
 )
 
 type EventsCreator interface {
-	Create(req event.CreateEventRequest) (event.Event, error)
-	GetByID(id string) (event.Event, error)
+	Create(ctx context.Context, req event.CreateEventRequest) (event.Event, error)
+	GetByID(ctx context.Context, id string) (event.Event, error)
 	List(ctx context.Context, filter event.ListEventsFilter) ([]event.Event, int, error)
 
 	// update and delete events
 
-	Update(id string, req event.UpdateEventRequest) (event.Event, error)
-	Delete(id string) error
+	Update(ctx context.Context, id string, req event.UpdateEventRequest) (event.Event, error)
+	Delete(ctx context.Context, id string) error
 }
 
 type EventsHandler struct {
@@ -53,7 +53,11 @@ func (e *EventsHandler) CreateEvent(ctx *gin.Context) {
 		return
 	}
 
-	event, err := e.repo.Create(req)
+	cctx, cancel := config.WithTimeout(2 * time.Second)
+
+	defer cancel()
+
+	event, err := e.repo.Create(cctx, req)
 
 	if err != nil {
 		RespondInternal(ctx, "Could not create event")
@@ -145,7 +149,11 @@ func (h *EventsHandler) ListEvents(ctx *gin.Context) {
 func (h *EventsHandler) GetEventById(ctx *gin.Context) {
 
 	id := ctx.Param("id")
-	e, err := h.repo.GetByID(id)
+
+	cctx, cancel := config.WithTimeout(2 * time.Second)
+
+	defer cancel()
+	e, err := h.repo.GetByID(cctx, id)
 
 	if err != nil {
 		if err == event.ErrNotFound {
@@ -169,7 +177,11 @@ func (h *EventsHandler) UpdateEvent(ctx *gin.Context) {
 		return
 	}
 
-	e, err := h.repo.Update(id, req)
+	cctx, cancel := config.WithTimeout(2 * time.Second)
+
+	defer cancel()
+
+	e, err := h.repo.Update(cctx,id, req)
 
 	// checks if the error type is not found, returns a 404
 	if err != nil {
@@ -190,7 +202,12 @@ func (h *EventsHandler) UpdateEvent(ctx *gin.Context) {
 func (h *EventsHandler) DeleteEvent(ctx *gin.Context) {
 	id := ctx.Param("id")
 
-	err := h.repo.Delete(id)
+	cctx,cancel := config.WithTimeout(2 * time.Second)
+
+	defer cancel()
+
+
+	err := h.repo.Delete(cctx,id)
 
 	// checks if the error type is not found, returns a 404
 	if err != nil {

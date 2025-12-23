@@ -24,24 +24,24 @@ func init() {
 // Fake repository implementations of the handlers.EventCreator interface
 
 type fakeEventsRepo struct {
-	createFn func(req event.CreateEventRequest) (event.Event, error)
-	getFn    func(id string) (event.Event, error)
+	createFn func(ctx context.Context,req event.CreateEventRequest) (event.Event, error)
+	getFn    func(ctx context.Context,id string) (event.Event, error)
 	listFn   func(ctx context.Context, filters event.ListEventsFilter) ([]event.Event, int, error)
-	updateFn func(id string, req event.UpdateEventRequest) (event.Event, error)
-	deleteFn func(id string) error
+	updateFn func(ctx context.Context,id string, req event.UpdateEventRequest) (event.Event, error)
+	deleteFn func(ctx context.Context,id string) error
 }
 
-func (f *fakeEventsRepo) Create(req event.CreateEventRequest) (event.Event, error) {
+func (f *fakeEventsRepo) Create(ctx context.Context,req event.CreateEventRequest) (event.Event, error) {
 	if f.createFn != nil {
-		return f.createFn(req)
+		return f.createFn(ctx,req)
 	}
 
 	return event.Event{}, nil
 }
 
-func (f *fakeEventsRepo) GetByID(id string) (event.Event, error) {
+func (f *fakeEventsRepo) GetByID(ctx context.Context,id string) (event.Event, error) {
 	if f.getFn != nil {
-		return f.getFn(id)
+		return f.getFn(ctx,id)
 	}
 
 	return event.Event{}, nil
@@ -55,17 +55,17 @@ func (f *fakeEventsRepo) List(ctx context.Context, filters event.ListEventsFilte
 	return nil, 0, nil
 }
 
-func (f *fakeEventsRepo) Update(id string, req event.UpdateEventRequest) (event.Event, error) {
+func (f *fakeEventsRepo) Update(ctx context.Context,id string, req event.UpdateEventRequest) (event.Event, error) {
 	if f.updateFn != nil {
-		return f.updateFn(id, req)
+		return f.updateFn(ctx,id, req)
 	}
 
 	return event.Event{}, nil
 }
 
-func (f *fakeEventsRepo) Delete(id string) error {
+func (f *fakeEventsRepo) Delete(ctx context.Context,id string) error {
 	if f.deleteFn != nil {
-		return f.deleteFn(id)
+		return f.deleteFn(ctx,id)
 	}
 
 	return nil
@@ -104,7 +104,7 @@ func TestCreateEventHandler(t *testing.T) {
 			}`,
 
 			repoSetUp: func(f *fakeEventsRepo) {
-				f.createFn = func(req event.CreateEventRequest) (event.Event, error) {
+				f.createFn = func(ctx context.Context,req event.CreateEventRequest) (event.Event, error) {
 					return event.Event{
 						ID:          "test-id",
 						Title:       req.Title,
@@ -138,7 +138,7 @@ func TestCreateEventHandler(t *testing.T) {
 				"capacity": 50
 			}`,
 			repoSetUp: func(f *fakeEventsRepo) {
-				f.createFn = func(req event.CreateEventRequest) (event.Event, error) {
+				f.createFn = func(ctx context.Context,req event.CreateEventRequest) (event.Event, error) {
 					return event.Event{}, errors.New("db error")
 				}
 			},
@@ -295,7 +295,7 @@ func TestUpdateEventHandler(t *testing.T) {
 			"capacity": 100
 			}`,
 			repoSetup: func(f *fakeEventsRepo) {
-				f.updateFn = func(id string, req event.UpdateEventRequest) (event.Event, error) {
+				f.updateFn = func(ctx context.Context,id string, req event.UpdateEventRequest) (event.Event, error) {
 					return event.Event{
 						ID: id,
 						Title: req.Title,
@@ -324,7 +324,7 @@ func TestUpdateEventHandler(t *testing.T) {
 				"capacity": 100
 			}`,
 			repoSetup: func(f *fakeEventsRepo) {
-				f.updateFn = func(id string, req event.UpdateEventRequest) (event.Event, error) {
+				f.updateFn = func(ctx context.Context,id string, req event.UpdateEventRequest) (event.Event, error) {
 					return event.Event{},event.ErrNotFound
 				}
 			},
@@ -355,7 +355,7 @@ func TestUpdateEventHandler(t *testing.T) {
 				"capacity": 100
 			}`,
 			repoSetup: func(f *fakeEventsRepo) {
-				f.updateFn = func(id string, req event.UpdateEventRequest) (event.Event, error) {
+				f.updateFn = func(ctx context.Context,id string, req event.UpdateEventRequest) (event.Event, error) {
 					return event.Event{},errors.New("db error")
 				}
 			},
@@ -405,7 +405,7 @@ func TestGetEventByIdHandler(t *testing.T) {
 			name: "success",
 			url: "/events/id-1",
 			repoSetup: func(f *fakeEventsRepo) {
-				f.getFn = func(id string) (event.Event, error) {
+				f.getFn = func(ctx context.Context,id string) (event.Event, error) {
 					return event.Event{
 						ID: "id-1",
 						Title: "Event-1",
@@ -424,7 +424,7 @@ func TestGetEventByIdHandler(t *testing.T) {
 			name: "not_found",
 			url: "/events/missing-id",
 			repoSetup: func(f *fakeEventsRepo) {
-				f.getFn = func(id string) (event.Event, error) {
+				f.getFn = func(ctx context.Context,id string) (event.Event, error) {
 					return event.Event{},event.ErrNotFound
 				}
 			},
@@ -434,7 +434,7 @@ func TestGetEventByIdHandler(t *testing.T) {
 			name: "repo_error",
 			url: "/events/id-1",
 			repoSetup: func(f *fakeEventsRepo) {
-				f.getFn = func(id string) (event.Event, error) {
+				f.getFn = func(ctx context.Context,id string) (event.Event, error) {
 					return event.Event{}, errors.New("db error")
 				}
 			},
@@ -480,7 +480,7 @@ func TestDeleteEventHandler (t *testing.T) {
 			name: "success",
 			url: "/events/id-1",
 			repoSetup: func(f *fakeEventsRepo) {
-				f.deleteFn = func(id string) error {
+				f.deleteFn = func(ctx context.Context,id string) error {
 					return nil
 				}
 			},
@@ -492,7 +492,7 @@ func TestDeleteEventHandler (t *testing.T) {
 			name : "not_found",
 			url: "/events/does-not-exists",
 			repoSetup: func(f *fakeEventsRepo) {
-				f.deleteFn = func(id string) error {
+				f.deleteFn = func(ctx context.Context,id string) error {
 					return event.ErrNotFound
 				}
 			},
@@ -502,7 +502,7 @@ func TestDeleteEventHandler (t *testing.T) {
 			name: "repo_error",
 			url: "/events/id-1",
 			repoSetup: func(f *fakeEventsRepo) {
-				f.deleteFn = func(id string) error {
+				f.deleteFn = func(ctx context.Context,id string) error {
 					return errors.New("db error")
 				}
 			},

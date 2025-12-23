@@ -23,10 +23,10 @@ func NewEventsRepo(pool *pgxpool.Pool) *EventsRepo {
 	}
 }
 
-func (r *EventsRepo) Create(req event.CreateEventRequest) (event.Event, error) {
+func (r *EventsRepo) Create(ctx context.Context,req event.CreateEventRequest) (event.Event, error) {
 	e := event.NewFromCreateRequest(req)
 
-	_, err := r.pool.Exec(context.Background(),
+	_, err := r.pool.Exec(ctx,
 		`INSERT INTO events(id,title, description, city, start_at, capacity,created_at, updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, e.ID, e.Title, e.Description, e.City, e.StartAt, e.Capacity, e.CreatedAt, e.UpdatedAt)
 
 	if err != nil {
@@ -123,9 +123,9 @@ func (r *EventsRepo) List(ctx context.Context, filteredEvents event.ListEventsFi
 	return output, total, nil
 }
 
-func (r *EventsRepo) GetByID(id string) (event.Event, error) {
+func (r *EventsRepo) GetByID(ctx context.Context,id string) (event.Event, error) {
 	var e event.Event
-	err := r.pool.QueryRow(context.Background(), `SELECT id, title, description,city,start_at,capacity,created_at,updated_at FROM events WHERE id =$1`, id).Scan(&e.ID, &e.Title, &e.Description, &e.City, &e.StartAt, &e.Capacity, &e.CreatedAt, &e.UpdatedAt)
+	err := r.pool.QueryRow(ctx, `SELECT id, title, description,city,start_at,capacity,created_at,updated_at FROM events WHERE id =$1`, id).Scan(&e.ID, &e.Title, &e.Description, &e.City, &e.StartAt, &e.Capacity, &e.CreatedAt, &e.UpdatedAt)
 
 	if err != nil {
 		return event.Event{}, event.ErrNotFound
@@ -134,11 +134,11 @@ func (r *EventsRepo) GetByID(id string) (event.Event, error) {
 	return e, nil
 }
 
-func (r *EventsRepo) Update(id string, req event.UpdateEventRequest) (event.Event, error) {
+func (r *EventsRepo) Update(ctx context.Context,id string, req event.UpdateEventRequest) (event.Event, error) {
 	var e event.Event
 
 	err := r.pool.QueryRow(
-		context.Background(),
+		ctx,
 		`UPDATE events
 			SET title = $2,
 					description = $3,
@@ -177,8 +177,8 @@ func (r *EventsRepo) Update(id string, req event.UpdateEventRequest) (event.Even
 	return e, nil
 }
 
-func (r *EventsRepo) Delete(id string) error {
-	query, err := r.pool.Exec(context.Background(), `
+func (r *EventsRepo) Delete(ctx context.Context,id string) error {
+	query, err := r.pool.Exec(ctx, `
 		DELETE from events WHERE id = $1
 	`, id)
 

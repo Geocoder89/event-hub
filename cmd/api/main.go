@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -19,6 +20,11 @@ func main() {
 	// Load the config set up
 	_ = godotenv.Load()
 	cfg := config.Load()
+
+	// Root context cancelled on SIGINT/SIGTERM
+	ctx,stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+
+	defer stop()
 
 	// start up the observability logger
 	log := observability.NewLogger(cfg.Env)
@@ -45,50 +51,35 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	// start server using a concurrent go-routine driven anonymous function.
+	// start server in the background using an anonymous function
 
 	go func() {
-		log.Info("Server starting", "port", cfg.Port, "env", cfg.Env)
-		err := srv.ListenAndServe()
-
-		if err != nil && err != http.ErrServerClosed {
+		log.Info("server starting", "addr", srv.Addr, "env", cfg.Env)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Error("server failed", "err", err)
 			os.Exit(1)
 		}
 	}()
 
-	// Graceful shutdown
+	// Block until we get SIGINT/SIGTERM
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	<-stop
-	log.Info("server shutting down")
+	<- ctx.Done()
 
-	shutdownCh := make(chan struct{})
+	log.Info("shutdown signal received")
 
-	go func() {
-		defer close(shutdownCh)
+	
 
-		ctxTimeOut := 10 * time.Second
+	// Graceful shutdown with timeout
 
-		ctx, cancel := config.WithTimeout(ctxTimeOut)
+	shutdownContext, cancelFunc := context.WithTimeout(context.Background(),10 * time.Second)
+	defer cancelFunc()
 
-		defer cancel()
+	err = srv.Shutdown(shutdownContext)
 
-		err := srv.Shutdown(ctx)
-
-		if err != nil {
-			log.Error("graceful shutdown failed", "err", err)
-
-			return
-		}
-	}()
-
-	select {
-	case <-shutdownCh:
-		log.Info("shutdown complete")
-
-	case <-time.After(12 * time.Second):
-		log.Error("shutdown timed out")
+	if err != nil {
+		log.Error("server graceful shutdown failed","err",err)
+		_ = srv.Close() // last resort
+	} else {
+		log.Info("server stopped gracefully.")
 	}
 }

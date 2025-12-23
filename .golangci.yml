@@ -13,6 +13,3 @@ linters:
 
 issues:
   uniq-by-line: true
-  exclude-files:
-    - ^tmp/
-    - ^vendor/

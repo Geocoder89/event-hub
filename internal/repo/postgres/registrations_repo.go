@@ -21,13 +21,13 @@ func NewRegistrationsRepo(pool *pgxpool.Pool) *RegistrationRepo {
 	}
 }
 
-// implementation of the create method using the idiomatic Go "named return and defer" approach 
+// implementation of the create method using the idiomatic Go "named return and defer" approach
 func (repo *RegistrationRepo) Create(ctx context.Context, req registration.CreateRegistrationRequest) (reg registration.Registration, err error) {
 	// Enforce capacity and uniqueness into a single transaction
 
 	tx, err := repo.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return 
+		return
 	}
 
 	defer func() {
@@ -41,7 +41,6 @@ func (repo *RegistrationRepo) Create(ctx context.Context, req registration.Creat
 		err = tx.Commit(ctx)
 	}()
 
-
 	var exists bool
 	err = tx.QueryRow(
 		ctx,
@@ -53,11 +52,11 @@ func (repo *RegistrationRepo) Create(ctx context.Context, req registration.Creat
 		req.Email,
 	).Scan(&exists)
 	if err != nil {
-		return 
+		return
 	}
 	if exists {
 		err = registration.ErrAlreadyRegistered
-		return 
+		return
 	}
 
 	// 2) Lock event row and check capacity
@@ -79,7 +78,7 @@ func (repo *RegistrationRepo) Create(ctx context.Context, req registration.Creat
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			err = event.ErrNotFound
-			return 
+			return
 		}
 
 		return
@@ -89,7 +88,7 @@ func (repo *RegistrationRepo) Create(ctx context.Context, req registration.Creat
 
 	if current >= capacity {
 		err = registration.ErrEventFull
-		return 
+		return
 	}
 
 	// Build registration from DTO
@@ -111,10 +110,10 @@ func (repo *RegistrationRepo) Create(ctx context.Context, req registration.Creat
 			return
 
 		}
-		return 
+		return
 	}
 	// success: registration is set err == nil
-	return 
+	return
 
 	/* OLDER IMPLEMENTATION OF CREATE REGISTRATION WITHOUT DB LOCK VIA TRANSACTIONS.
 	 */
@@ -138,17 +137,15 @@ func (repo *RegistrationRepo) Create(ctx context.Context, req registration.Creat
 	// return reg, nil
 }
 
-
-func (repo *RegistrationRepo)ListByEvent(ctx context.Context,eventID string ) (regs []registration.Registration,err error){
+func (repo *RegistrationRepo) ListByEvent(ctx context.Context, eventID string) (regs []registration.Registration, err error) {
 	rows, err := repo.pool.Query(ctx,
-	`
+		`
 	SELECT id, event_id,name, email, created_at,updated_at
 	FROM registrations
 	WHERE event_id = $1
 	ORDER BY created_at ASC, id ASC
 	`,
-	eventID,
-	
+		eventID,
 	)
 
 	if err != nil {
@@ -157,12 +154,12 @@ func (repo *RegistrationRepo)ListByEvent(ctx context.Context,eventID string ) (r
 
 	defer rows.Close()
 
-	regs = make([]registration.Registration,0)
+	regs = make([]registration.Registration, 0)
 
-	for rows.Next(){
+	for rows.Next() {
 		var r registration.Registration
 
-		err = rows.Scan(&r.ID, &r.EventID, &r.Name, &r.Email,&r.CreatedAt,&r.UpdatedAt)
+		err = rows.Scan(&r.ID, &r.EventID, &r.Name, &r.Email, &r.CreatedAt, &r.UpdatedAt)
 
 		if err != nil {
 			return
@@ -173,7 +170,7 @@ func (repo *RegistrationRepo)ListByEvent(ctx context.Context,eventID string ) (r
 	err = rows.Err()
 
 	if err != nil {
-		return 
+		return
 	}
 
 	// in the event i want a 404 if the event itself does not exist
@@ -182,11 +179,11 @@ func (repo *RegistrationRepo)ListByEvent(ctx context.Context,eventID string ) (r
 		// check if event exists at all
 		var dummy string
 
-		err = repo.pool.QueryRow(ctx,`SELECT id FROM events WHERE id = $1`,eventID).Scan(&dummy)
-		if errors.Is(err,pgx.ErrNoRows) {
+		err = repo.pool.QueryRow(ctx, `SELECT id FROM events WHERE id = $1`, eventID).Scan(&dummy)
+		if errors.Is(err, pgx.ErrNoRows) {
 			err = event.ErrNotFound
 
-			return 
+			return
 		}
 
 		if err != nil {
@@ -194,13 +191,13 @@ func (repo *RegistrationRepo)ListByEvent(ctx context.Context,eventID string ) (r
 		}
 	}
 
-	return 
+	return
 }
 
 // Delete removes a single registration for an event
 
-func(repo *RegistrationRepo)Delete(ctx context.Context, eventID,registrationID string) (err error) {
-	tag, err := repo.pool.Exec(ctx, `DELETE FROM registrations WHERE id = $1 AND event_id = $2`,registrationID, eventID)
+func (repo *RegistrationRepo) Delete(ctx context.Context, eventID, registrationID string) (err error) {
+	tag, err := repo.pool.Exec(ctx, `DELETE FROM registrations WHERE id = $1 AND event_id = $2`, registrationID, eventID)
 
 	if err != nil {
 		return
@@ -209,10 +206,8 @@ func(repo *RegistrationRepo)Delete(ctx context.Context, eventID,registrationID s
 	if tag.RowsAffected() == 0 {
 		err = registration.ErrNotFound
 
-		return 
+		return
 	}
 
 	return
 }
-
-

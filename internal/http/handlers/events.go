@@ -181,7 +181,7 @@ func (h *EventsHandler) UpdateEvent(ctx *gin.Context) {
 
 	defer cancel()
 
-	e, err := h.repo.Update(cctx,id, req)
+	e, err := h.repo.Update(cctx, id, req)
 
 	// checks if the error type is not found, returns a 404
 	if err != nil {
@@ -202,12 +202,11 @@ func (h *EventsHandler) UpdateEvent(ctx *gin.Context) {
 func (h *EventsHandler) DeleteEvent(ctx *gin.Context) {
 	id := ctx.Param("id")
 
-	cctx,cancel := config.WithTimeout(2 * time.Second)
+	cctx, cancel := config.WithTimeout(2 * time.Second)
 
 	defer cancel()
 
-
-	err := h.repo.Delete(cctx,id)
+	err := h.repo.Delete(cctx, id)
 
 	// checks if the error type is not found, returns a 404
 	if err != nil {

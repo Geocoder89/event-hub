@@ -31,12 +31,11 @@ func setupTestRouter(t *testing.T) (*gin.Engine, *pgxpool.Pool) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
-
-	  dsn := os.Getenv("TEST_DB_DSN")
-    if dsn == "" {
-        // default for local dev (your docker-compose)
-        dsn = "postgres://eventhub:eventhub@127.0.0.1:5433/eventhub?sslmode=disable"
-    }
+	dsn := os.Getenv("TEST_DB_DSN")
+	if dsn == "" {
+		// default for local dev (your docker-compose)
+		dsn = "postgres://eventhub:eventhub@127.0.0.1:5433/eventhub?sslmode=disable"
+	}
 
 	ctx := context.Background()
 

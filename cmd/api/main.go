@@ -22,7 +22,7 @@ func main() {
 	cfg := config.Load()
 
 	// Root context cancelled on SIGINT/SIGTERM
-	ctx,stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 
 	defer stop()
 
@@ -63,21 +63,19 @@ func main() {
 
 	// Block until we get SIGINT/SIGTERM
 
-	<- ctx.Done()
+	<-ctx.Done()
 
 	log.Info("shutdown signal received")
 
-	
-
 	// Graceful shutdown with timeout
 
-	shutdownContext, cancelFunc := context.WithTimeout(context.Background(),10 * time.Second)
+	shutdownContext, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelFunc()
 
 	err = srv.Shutdown(shutdownContext)
 
 	if err != nil {
-		log.Error("server graceful shutdown failed","err",err)
+		log.Error("server graceful shutdown failed", "err", err)
 		_ = srv.Close() // last resort
 	} else {
 		log.Info("server stopped gracefully.")

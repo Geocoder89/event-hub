@@ -1,16 +1,28 @@
-version: 2
+version: "2"
+
 run:
   timeout: 3m
   tests: true
-issues:
-  exclude-use-default: false
-  exclude-dirs:
-    - tmp
-    - vendor
 
 linters:
+  disable-all: true
   enable:
     - govet
     - staticcheck
     - ineffassign
     - errcheck
+
+  # Replaces issues.exclude-dirs + issues.exclude-use-default
+  exclusions:
+    paths:
+      - tmp
+      - vendor
+    # optional presets; you can drop this if you want everything
+    # presets:
+    #   - common-false-positives
+    #   - legacy
+    #   - std-error-handling
+
+issues:
+  # keep defaults simple; add knobs later if you want
+  uniq-by-line: true

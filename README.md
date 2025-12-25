@@ -240,6 +240,21 @@ Next Steps (planned)
 
 
 
+## Postman collection
+
+For manual API exploration there is a Postman collection and local environment:
+
+- `postman/eventhub-api.postman_collection.json`
+- `postman/eventhub-local.postman_environment.json`
+
+Usage:
+
+1. Import both files into Postman.
+2. Select the **event-hub-local** environment.
+3. Use the collection’s “Create event” request to create an event; scripts will capture the `eventId` into the environment.
+4. Use the other requests (list, get by id, register, etc.) to exercise the API.
+
+
 
 
 

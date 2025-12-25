@@ -1,0 +1,312 @@
+{
+	"info": {
+		"_postman_id": "224151f0-2ee4-434e-ba9e-4cc13ca4012b",
+		"name": "EventHub API",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "5496556",
+		"_collection_link": "https://www.postman.com/galactic-escape-338627/workspace/projects/collection/5496556-224151f0-2ee4-434e-ba9e-4cc13ca4012b?action=share&source=collection_link&creator=5496556"
+	},
+	"item": [
+		{
+			"name": "Health",
+			"item": [
+				{
+					"name": "healthz",
+					"request": {
+						"method": "GET",
+						"header": []
+					},
+					"response": []
+				},
+				{
+					"name": "readyz",
+					"request": {
+						"method": "GET",
+						"header": []
+					},
+					"response": []
+				}
+			],
+			"description": "Health of the API"
+		},
+		{
+			"name": "Events",
+			"item": [
+				{
+					"name": "{{baseUrl}}/events",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Only run for 201 Created",
+									"if (pm.response.code === 201) {",
+									"  const res = pm.response.json();",
+									"  console.log(\"Create event response:\", res);",
+									"",
+									"  const id = res.id; ",
+									"  if (id) {",
+									"    pm.environment.set(\"eventId\", id);",
+									"    console.log(\"eventId set to:\", id);",
+									"  } else {",
+									"    console.log(\"Response did not contain id, keys:\", Object.keys(res || {}));",
+									"  }",
+									"}",
+									""
+								],
+								"type": "text/javascript",
+								"packages": {},
+								"requests": {}
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "\n{\n  \"title\": \"A test event\",\n  \"description\": \"Capacity test\",\n  \"city\": \"Toronto\",\n  \"startAt\": \"2025-12-20T13:00:00-05:00\",\n  \"capacity\": 20\n}\n",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/events",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"events"
+							]
+						},
+						"description": "Add an event\n"
+					},
+					"response": []
+				},
+				{
+					"name": "{{baseUrl}}/events",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/events",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"events"
+							],
+							"query": [
+								{
+									"key": "from",
+									"value": "2025-12-09T00:00:00Z",
+									"disabled": true
+								},
+								{
+									"key": "to",
+									"value": "2025-12-15T23:59:59Z",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get all events including using filters such as startAt, description and city."
+					},
+					"response": []
+				},
+				{
+					"name": "{{baseUrl}}/events/{{eventId}}",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/events/{{eventId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"events",
+								"{{eventId}}"
+							]
+						},
+						"description": "Get a specific event by it's id"
+					},
+					"response": []
+				},
+				{
+					"name": "{{baseUrl}}/events/{{eventId}}",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"Go Build in public Meetup\",\n    \"description\": \"Day 21 Demo and update an event!!!\",\n    \"city\": \"Toronto\",\n    \"startAt\": \"2025-12-15T18:00:00Z\",\n    \"capacity\": 50\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/events/{{eventId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"events",
+								"{{eventId}}"
+							]
+						},
+						"description": "Update an event by it's ID"
+					},
+					"response": []
+				},
+				{
+					"name": "{{baseUrl}}/events/{{eventId}}",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/events/{{eventId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"events",
+								"{{eventId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "New Request",
+					"request": {
+						"method": "GET",
+						"header": []
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "registrations",
+			"item": [
+				{
+					"name": "{{baseUrl}}/events/{{eventId}}/register",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Chris Doe\",\n    \"email\": \"Doe@example.com\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/events/{{eventId}}/register",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"events",
+								"{{eventId}}",
+								"register"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "{{baseUrl}}events/{{registrationId}}",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}events/{{registrationId}}",
+							"host": [
+								"{{baseUrl}}events"
+							],
+							"path": [
+								"{{registrationId}}"
+							]
+						},
+						"description": "Get a registration by it's id"
+					},
+					"response": []
+				},
+				{
+					"name": "{{baseUrl}}/events/{{eventId}}registrations",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/events/{{eventId}}registrations",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"events",
+								"{{eventId}}registrations"
+							]
+						},
+						"description": "Get all registrations to an event."
+					},
+					"response": []
+				},
+				{
+					"name": "{{baseUrl}}/events/{{eventId}}/registrations/{{registrationId}}",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/events/{{eventId}}/registrations/{{registrationId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"events",
+								"{{eventId}}",
+								"registrations",
+								"{{registrationId}}"
+							]
+						},
+						"description": "Cancel an event using it's event id and registration Id"
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}

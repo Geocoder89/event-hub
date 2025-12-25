@@ -60,6 +60,7 @@ func (e *EventsHandler) CreateEvent(ctx *gin.Context) {
 	event, err := e.repo.Create(cctx, req)
 
 	if err != nil {
+		fmt.Println(err)
 		RespondInternal(ctx, "Could not create event")
 		return
 	}
@@ -89,6 +90,7 @@ func (h *EventsHandler) ListEvents(ctx *gin.Context) {
 	var cityPtr *string
 	if city := ctx.Query("city"); city != "" {
 		cityPtr = &city
+		
 	}
 
 	// date filters (optional)

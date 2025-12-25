@@ -1,4 +1,4 @@
-APP_NAME   := eventhub
+leAPP_NAME   := eventhub
 GOOSE_DIR  := db/migrations
 AIR        := $(shell go env GOPATH)/bin/air
 

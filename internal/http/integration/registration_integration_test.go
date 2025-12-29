@@ -12,11 +12,28 @@ import (
 	"testing"
 	"time"
 
+
 	apphttp "github.com/geocoder89/eventhub/internal/http"
+	 "github.com/geocoder89/eventhub/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+
+func testConfig() config.Config {
+    return config.Config{
+        Env:                  "test",
+        Port:                 0,                      // not used in tests
+        DBURL:                "",                     // pool created manually in tests
+        AdminEmail:           "admin@example.com",    // not used here
+        AdminPassword:        "ignored-in-tests",
+        AdminName:            "Test Admin",
+        AdminRole:            "admin",
+        JWTSecret:            "test-secret-key",      // deterministic test secret
+        JWTAccessTTLMinutes:  60,
+    }
+}
 
 type apiErrorResponse struct {
 	Error struct {
@@ -50,7 +67,9 @@ func setupTestRouter(t *testing.T) (*gin.Engine, *pgxpool.Pool) {
 		Level: slog.LevelDebug,
 	}))
 
-	router := apphttp.NewRouter(logger, pool)
+	cfg := testConfig()
+
+	router := apphttp.NewRouter(logger, pool,cfg)
 
 	return router, pool
 }

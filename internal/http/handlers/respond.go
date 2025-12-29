@@ -53,3 +53,7 @@ func RespondInternal(ctx *gin.Context, message string) {
 func RespondConflict(ctx *gin.Context, code, message string) {
 	RespondError(ctx, http.StatusConflict, code, message, nil)
 }
+
+func RespondUnAuthorized(ctx *gin.Context, code, message string) {
+	RespondError(ctx, http.StatusUnauthorized, code, message, nil)
+}

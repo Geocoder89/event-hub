@@ -38,8 +38,20 @@ func main() {
 
 	defer pool.Close()
 
+	// Seed admin user(with timeout)
+
+	seedCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	err = db.EnsureAdminUser(seedCtx, pool, cfg)
+
+	if err != nil {
+		cancel()
+		log.Error("failed to seed admin user", "err", err)
+		os.Exit(1)
+	}
+	cancel()
+
 	// set up routers with the log
-	router := httpx.NewRouter(log, pool)
+	router := httpx.NewRouter(log, pool,cfg)
 
 	// server set up
 	srv := &http.Server{

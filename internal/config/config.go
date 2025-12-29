@@ -12,6 +12,13 @@ type Config struct {
 	Env   string
 	Port  int
 	DBURL string
+
+	AdminEmail          string
+	AdminPassword       string
+	AdminName           string
+	AdminRole           string
+	JWTSecret           string
+	JWTAccessTTLMinutes int
 }
 
 func Load() Config {
@@ -19,10 +26,25 @@ func Load() Config {
 	port := getEnvInt("PORT", 8080)
 	dbURL := buildDBURL()
 
+	// admin config set up
+
+	adminEmail := getEnv("ADMIN_EMAIL", "")
+	adminPassword := getEnv("ADMIN_PASSWORD", "")
+	adminName := getEnv("ADMIN_NAME", "Eventhub Admin")
+	adminRole := getEnv("ADMIN_ROLE", "admin")
+	jwtSecret := getEnv("JWT_SECRET", "dev-secret-change-me")
+	jwtTTL := getEnvInt("JWT_ACCESS_TTL_MINUTES", 60)
+
 	return Config{
-		Env:   env,
-		Port:  port,
-		DBURL: dbURL,
+		Env:                 env,
+		Port:                port,
+		DBURL:               dbURL,
+		AdminEmail:          adminEmail,
+		AdminPassword:       adminPassword,
+		AdminName:           adminName,
+		AdminRole:           adminRole,
+		JWTSecret:           jwtSecret,
+		JWTAccessTTLMinutes: jwtTTL,
 	}
 }
 

@@ -90,7 +90,7 @@ func (h *EventsHandler) ListEvents(ctx *gin.Context) {
 	var cityPtr *string
 	if city := ctx.Query("city"); city != "" {
 		cityPtr = &city
-		
+
 	}
 
 	// date filters (optional)

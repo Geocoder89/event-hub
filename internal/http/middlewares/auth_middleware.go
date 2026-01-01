@@ -21,12 +21,6 @@ func NewAuthMiddleware(jwt TokenVerifier) *AuthMiddleware {
 	return &AuthMiddleware{jwt: jwt}
 }
 
-const (
-	ctxUserIDKey = "auth.userID"
-	ctxEmailKey  = "auth.email"
-	ctxRoleKey   = "auth.role"
-)
-
 func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
@@ -40,7 +34,7 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 			return
 		}
 
-		raw := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer"))
+		raw := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
 		if raw == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error": gin.H{
@@ -63,9 +57,9 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 		}
 
 		// Stash useful bits of identity on the context
-		c.Set(ctxUserIDKey, claims.UserID)
-		c.Set(ctxEmailKey, claims.Email)
-		c.Set(ctxRoleKey, claims.Role)
+		c.Set(CtxUserID, claims.UserID)
+		c.Set(CtxEmail, claims.Email)
+		c.Set(CtxRole, claims.Role)
 
 		c.Next()
 	}
@@ -74,7 +68,7 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 // Optional helpers so handlers don’t need to know the magic keys.
 
 func UserIDFromContext(c *gin.Context) (string, bool) {
-	v, ok := c.Get(ctxUserIDKey)
+	v, ok := c.Get(CtxUserID)
 	if !ok {
 		return "", false
 	}
@@ -83,7 +77,7 @@ func UserIDFromContext(c *gin.Context) (string, bool) {
 }
 
 func RoleFromContext(c *gin.Context) (string, bool) {
-	v, ok := c.Get(ctxRoleKey)
+	v, ok := c.Get(CtxRole)
 	if !ok {
 		return "", false
 	}

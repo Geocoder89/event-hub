@@ -97,10 +97,10 @@ func (repo *RegistrationRepo) Create(ctx context.Context, req registration.Creat
 	// Insert registration (still insider the transaction)
 
 	_, err = tx.Exec(ctx,
-		`INSERT INTO registrations (id,event_id,name,email, created_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6)
+		`INSERT INTO registrations (id,event_id,user_id,name,email, created_at, updated_at)
+		 VALUES ($1,$2,$3,$4,$5,$6, $7)
 		`,
-		reg.ID, reg.EventID, reg.Name, reg.Email, reg.CreatedAt, reg.UpdatedAt,
+		reg.ID, reg.EventID, reg.UserID, reg.Name, reg.Email, reg.CreatedAt, reg.UpdatedAt,
 	)
 
 	if err != nil {
@@ -140,7 +140,7 @@ func (repo *RegistrationRepo) Create(ctx context.Context, req registration.Creat
 func (repo *RegistrationRepo) ListByEvent(ctx context.Context, eventID string) (regs []registration.Registration, err error) {
 	rows, err := repo.pool.Query(ctx,
 		`
-	SELECT id, event_id,name, email, created_at,updated_at
+	SELECT id, event_id,user_id,name, email, created_at,updated_at
 	FROM registrations
 	WHERE event_id = $1
 	ORDER BY created_at ASC, id ASC
@@ -159,7 +159,7 @@ func (repo *RegistrationRepo) ListByEvent(ctx context.Context, eventID string) (
 	for rows.Next() {
 		var r registration.Registration
 
-		err = rows.Scan(&r.ID, &r.EventID, &r.Name, &r.Email, &r.CreatedAt, &r.UpdatedAt)
+		err = rows.Scan(&r.ID, &r.EventID, &r.UserID, &r.Name, &r.Email, &r.CreatedAt, &r.UpdatedAt)
 
 		if err != nil {
 			return
@@ -191,6 +191,31 @@ func (repo *RegistrationRepo) ListByEvent(ctx context.Context, eventID string) (
 		}
 	}
 
+	return
+}
+
+func (repo *RegistrationRepo) GetByID(ctx context.Context, eventID, registrationID string) (foundReg registration.Registration, newErr error) {
+	var r registration.Registration
+	err := repo.pool.QueryRow(ctx,
+		`
+		SELECT id, event_id, user_id, name, email, created_at, updated_at
+		FROM registrations
+		WHERE id = $1 AND event_id = $2
+		`,
+		registrationID, eventID,
+	).Scan(&r.ID, &r.EventID, &r.UserID, &r.Name, &r.Email, &r.CreatedAt, &r.UpdatedAt)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			newErr = registration.ErrNotFound
+			return
+		}
+
+		newErr = err
+		return
+	}
+
+	foundReg = r
 	return
 }
 

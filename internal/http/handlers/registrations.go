@@ -10,12 +10,14 @@ import (
 	"github.com/geocoder89/eventhub/internal/config"
 	"github.com/geocoder89/eventhub/internal/domain/event"
 	"github.com/geocoder89/eventhub/internal/domain/registration"
+	"github.com/geocoder89/eventhub/internal/http/middlewares"
 	"github.com/gin-gonic/gin"
 )
 
 type RegistrationCreator interface {
 	Create(ctx context.Context, req registration.CreateRegistrationRequest) (registration.Registration, error)
 	ListByEvent(ctx context.Context, eventID string) ([]registration.Registration, error)
+	GetByID(ctx context.Context, eventID, registrationID string) (registration.Registration, error)
 	Delete(ctx context.Context, eventID, registrationID string) error
 }
 
@@ -40,6 +42,16 @@ func (h *RegistrationHandler) Register(ctx *gin.Context) {
 
 	req.EventID = eventID
 
+	// attach the userId to request.
+	userID, ok := middlewares.UserIDFromContext(ctx)
+
+	if !ok || userID == "" {
+		RespondUnAuthorized(ctx, "unauthorized", "Missing identity")
+		return
+	}
+
+	req.UserID = userID
+
 	cctx, cancel := config.WithTimeout(2 * time.Second)
 
 	defer cancel()
@@ -57,11 +69,10 @@ func (h *RegistrationHandler) Register(ctx *gin.Context) {
 			RespondConflict(ctx, "event_full", "this event is already at full capacity.")
 			return
 		}
-
-		fmt.Println(err)
 		// otherwise return 500
 
 		RespondInternal(ctx, "Could not register for event")
+		fmt.Println(err)
 		return
 	}
 
@@ -96,10 +107,48 @@ func (h *RegistrationHandler) Cancel(ctx *gin.Context) {
 	eventID := ctx.Param("id")
 	regID := ctx.Param("registrationId")
 
+	// attach userID into request
+	userID, ok := middlewares.UserIDFromContext(ctx)
+
+	if !ok || userID == "" {
+		RespondUnAuthorized(ctx, "unauthorized", "Missing identity")
+		return
+	}
+
+	role, _ := middlewares.RoleFromContext(ctx)
+
 	cctx, cancel := config.WithTimeout(2 * time.Second)
 	defer cancel()
 
-	err := h.repo.Delete(cctx, eventID, regID)
+	// Load registration to check ownership
+
+	reg, err := h.repo.GetByID(cctx, eventID, regID)
+
+	if err != nil {
+		if errors.Is(err, registration.ErrNotFound) {
+			RespondNotFound(ctx, "Registration not found")
+
+			return
+		}
+
+		RespondInternal(ctx, "Could not cancel registration")
+		return
+	}
+
+	// Check ownership (admin override)
+
+	if role != "admin" && reg.UserID != userID {
+		ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+			"error": gin.H{
+				"code":    "forbidden",
+				"message": "You can only cancel your registration",
+			},
+		})
+
+		return
+	}
+	// Else delete
+	err = h.repo.Delete(cctx, eventID, regID)
 	if err != nil {
 		if errors.Is(err, registration.ErrNotFound) {
 			RespondNotFound(ctx, "Registration not found")

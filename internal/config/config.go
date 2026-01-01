@@ -19,6 +19,7 @@ type Config struct {
 	AdminRole           string
 	JWTSecret           string
 	JWTAccessTTLMinutes int
+	JWTRefreshTTLDays   int
 }
 
 func Load() Config {
@@ -34,6 +35,7 @@ func Load() Config {
 	adminRole := getEnv("ADMIN_ROLE", "admin")
 	jwtSecret := getEnv("JWT_SECRET", "dev-secret-change-me")
 	jwtTTL := getEnvInt("JWT_ACCESS_TTL_MINUTES", 60)
+	jwtRefreshTTLDays := getEnvInt("JWT_REFRESH_TTL_DAYS", 14)
 
 	return Config{
 		Env:                 env,
@@ -45,6 +47,7 @@ func Load() Config {
 		AdminRole:           adminRole,
 		JWTSecret:           jwtSecret,
 		JWTAccessTTLMinutes: jwtTTL,
+		JWTRefreshTTLDays:   jwtRefreshTTLDays,
 	}
 }
 

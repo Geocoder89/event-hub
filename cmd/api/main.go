@@ -51,7 +51,7 @@ func main() {
 	cancel()
 
 	// set up routers with the log
-	router := httpx.NewRouter(log, pool,cfg)
+	router := httpx.NewRouter(log, pool, cfg)
 
 	// server set up
 	srv := &http.Server{

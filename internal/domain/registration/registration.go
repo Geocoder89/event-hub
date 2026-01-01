@@ -9,6 +9,7 @@ import (
 type Registration struct {
 	ID        string    `json:"id"`
 	EventID   string    `json:"eventId"`
+	UserID    string    `json:"userId"`
 	Name      string    `json:"name"`
 	Email     string    `json:"email"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -24,6 +25,7 @@ var ErrNotFound = errors.New("registration not found")
 
 type CreateRegistrationRequest struct {
 	EventID string `json:"-"`
+	UserID  string `json:"-"`
 	Name    string `json:"name" binding:"required,min=2"`
 	Email   string `json:"email" binding:"required,email"`
 }
@@ -35,6 +37,7 @@ func NewFromCreateRequest(req CreateRegistrationRequest) Registration {
 	return Registration{
 		ID:        uuid.NewString(),
 		EventID:   req.EventID,
+		UserID:    req.UserID, // added user id from access token into request field.
 		Name:      req.Name,
 		Email:     req.Email,
 		CreatedAt: now,

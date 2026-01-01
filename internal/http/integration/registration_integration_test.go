@@ -72,20 +72,60 @@ func setupTestRouter(t *testing.T) (*gin.Engine, *pgxpool.Pool) {
 	return router, pool
 }
 
+
+
+type tokenResponse struct {
+	AccessToken string `json:"accessToken"`
+}
+
+func signupAndGetToken(t *testing.T, router *gin.Engine, email string) string {
+	t.Helper()
+
+	body := `{
+		"email": "` + email + `",
+		"password": "StrongPassword123!",
+		"name": "Test User"
+	}`
+
+	req := httptest.NewRequest(http.MethodPost, "/signup", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("signup failed: status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	var resp tokenResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse signup response: %v", err)
+	}
+
+	if resp.AccessToken == "" {
+		t.Fatalf("missing accessToken in signup response: body=%s", w.Body.String())
+	}
+
+	return resp.AccessToken
+}
+
 // reset db function after every test
 
 func resetDB(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 
-	// Truncate in dependency order noting that registrations depend on events
-
-	_, err := pool.Exec(context.Background(), `TRUNCATE events RESTART IDENTITY CASCADE`)
-
+	_, err := pool.Exec(context.Background(), `
+		TRUNCATE
+			refresh_tokens,
+			registrations,
+			events,
+			users
+		RESTART IDENTITY CASCADE
+	`)
 	if err != nil {
 		t.Fatalf("failed to truncate tables: %v", err)
 	}
 }
-
 // Create a seeded event for our integration tests
 
 func seedEvent(t *testing.T, pool *pgxpool.Pool, capacity int) string {
@@ -124,6 +164,8 @@ func TestRegisterIntegration_HappyPath(t *testing.T) {
 	defer resetDB(t, pool)
 	eventID := seedEvent(t, pool, 2)
 
+	
+
 	body := `{
 			"name": "Sam Doe",
 			"email": "sam@example.com"
@@ -131,7 +173,10 @@ func TestRegisterIntegration_HappyPath(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/events/"+eventID+"/register", bytes.NewBufferString(body))
 
+	token := signupAndGetToken(t,router,"sam@example.com")
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer " +token)
+
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -173,9 +218,14 @@ func TestRegisterIntegration_DuplicateEmail(t *testing.T) {
 			"email": "sam@example.com"
 	 }`
 
+
+	// set up token
+	token := signupAndGetToken(t, router, "sam@example.com")
+
 	//  first registration should succeed
 	req1 := httptest.NewRequest(http.MethodPost, "/events/"+eventID+"/register", bytes.NewBufferString(body))
 	req1.Header.Set("Content-Type", "application/json")
+	req1.Header.Set("Authorization", "Bearer "+token)
 	w1 := httptest.NewRecorder()
 	router.ServeHTTP(w1, req1)
 	if w1.Code != http.StatusCreated {
@@ -186,6 +236,7 @@ func TestRegisterIntegration_DuplicateEmail(t *testing.T) {
 
 	req2 := httptest.NewRequest(http.MethodPost, "/events/"+eventID+"/register", bytes.NewBufferString(body))
 	req2.Header.Set("Content-Type", "application/json")
+	req2.Header.Set("Authorization", "Bearer "+token)
 	w2 := httptest.NewRecorder()
 	router.ServeHTTP(w2, req2)
 
@@ -214,12 +265,16 @@ func TestRegisterIntegration_EventFull(t *testing.T) {
 	// capacity = 1
 	eventID := seedEvent(t, pool, 1)
 
+
 	body1 := `{"name":"User One","email":"user1@example.com"}`
 	body2 := `{"name":"User Two","email":"user2@example.com"}`
 
+	token := signupAndGetToken(t, router, "user1@example.com")
 	// First registration (fills capacity)
 	req1 := httptest.NewRequest(http.MethodPost, "/events/"+eventID+"/register", bytes.NewBufferString(body1))
 	req1.Header.Set("Content-Type", "application/json")
+	req1.Header.Set("Authorization", "Bearer "+token)
+
 	w1 := httptest.NewRecorder()
 	router.ServeHTTP(w1, req1)
 
@@ -230,6 +285,7 @@ func TestRegisterIntegration_EventFull(t *testing.T) {
 	// Second registration (different email) -> should get event_full
 	req2 := httptest.NewRequest(http.MethodPost, "/events/"+eventID+"/register", bytes.NewBufferString(body2))
 	req2.Header.Set("Content-Type", "application/json")
+	req2.Header.Set("Authorization", "Bearer "+token)
 	w2 := httptest.NewRecorder()
 	router.ServeHTTP(w2, req2)
 
@@ -251,11 +307,13 @@ func TestRegisterIntegration_EventNotFound(t *testing.T) {
 	router, _ := setupTestRouter(t)
 
 	body := `{"name":"Sam Example","email":"sam@example.com"}`
-
+	token := signupAndGetToken(t, router, "sam@example.com")
 	nonExistentID := uuid.NewString()
 
 	req := httptest.NewRequest(http.MethodPost, "/events/"+nonExistentID+"/register", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)

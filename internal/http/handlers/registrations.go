@@ -11,6 +11,7 @@ import (
 	"github.com/geocoder89/eventhub/internal/domain/event"
 	"github.com/geocoder89/eventhub/internal/domain/registration"
 	"github.com/geocoder89/eventhub/internal/http/middlewares"
+	"github.com/geocoder89/eventhub/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -31,6 +32,11 @@ func NewRegistrationHandler(repo RegistrationCreator) *RegistrationHandler {
 
 func (h *RegistrationHandler) Register(ctx *gin.Context) {
 	eventID := ctx.Param("id")
+
+	if !utils.IsUUID(eventID) {
+		RespondBadRequest(ctx, "invalid_id", "event id must be a valid UUID")
+		return
+	}
 
 	var req registration.CreateRegistrationRequest
 
@@ -82,6 +88,11 @@ func (h *RegistrationHandler) Register(ctx *gin.Context) {
 func (h *RegistrationHandler) ListForEvent(ctx *gin.Context) {
 	eventID := ctx.Param("id")
 
+	if !utils.IsUUID(eventID) {
+		RespondBadRequest(ctx, "invalid_id", "event id must be a valid UUID")
+		return
+	}
+
 	cctx, cancel := config.WithTimeout(2 * time.Second)
 	defer cancel()
 
@@ -106,6 +117,16 @@ func (h *RegistrationHandler) ListForEvent(ctx *gin.Context) {
 func (h *RegistrationHandler) Cancel(ctx *gin.Context) {
 	eventID := ctx.Param("id")
 	regID := ctx.Param("registrationId")
+
+	if !utils.IsUUID(eventID) {
+		RespondBadRequest(ctx, "invalid_id", "event id must be a valid UUID")
+		return
+	}
+
+	if !utils.IsUUID(regID) {
+		RespondBadRequest(ctx, "invalid_id", "registration id must be a valid UUID")
+		return
+	}
 
 	// attach userID into request
 	userID, ok := middlewares.UserIDFromContext(ctx)

@@ -10,6 +10,7 @@ import (
 
 	"github.com/geocoder89/eventhub/internal/config"
 	"github.com/geocoder89/eventhub/internal/domain/event"
+	"github.com/geocoder89/eventhub/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -152,6 +153,11 @@ func (h *EventsHandler) GetEventById(ctx *gin.Context) {
 
 	id := ctx.Param("id")
 
+	if !utils.IsUUID(id) {
+		RespondBadRequest(ctx, "invalid_id", "id must be a valid UUID")
+		return
+	}
+
 	cctx, cancel := config.WithTimeout(2 * time.Second)
 
 	defer cancel()
@@ -172,6 +178,11 @@ func (h *EventsHandler) GetEventById(ctx *gin.Context) {
 
 func (h *EventsHandler) UpdateEvent(ctx *gin.Context) {
 	id := ctx.Param("id")
+
+	if !utils.IsUUID(id) {
+		RespondBadRequest(ctx, "invalid_id", "id must be a valid UUID")
+		return
+	}
 
 	var req event.UpdateEventRequest
 
@@ -203,6 +214,11 @@ func (h *EventsHandler) UpdateEvent(ctx *gin.Context) {
 
 func (h *EventsHandler) DeleteEvent(ctx *gin.Context) {
 	id := ctx.Param("id")
+
+	if !utils.IsUUID(id) {
+		RespondBadRequest(ctx, "invalid_id", "id must be a valid UUID")
+		return
+	}
 
 	cctx, cancel := config.WithTimeout(2 * time.Second)
 

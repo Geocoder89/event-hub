@@ -58,9 +58,9 @@ type LoginRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 type SignUpRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=8"`
-	Name     string `json:"name" binding:"required"`
+	Email    string `json:"email" binding:"required,email,max=254"`
+	Password string `json:"password" binding:"required,min=8,max=72"`
+	Name     string `json:"name" binding:"required,min=2,max=100"`
 }
 
 func (h *AuthHandler) SignUp(ctx *gin.Context) {

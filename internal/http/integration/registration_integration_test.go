@@ -72,8 +72,6 @@ func setupTestRouter(t *testing.T) (*gin.Engine, *pgxpool.Pool) {
 	return router, pool
 }
 
-
-
 type tokenResponse struct {
 	AccessToken string `json:"accessToken"`
 }
@@ -126,6 +124,7 @@ func resetDB(t *testing.T, pool *pgxpool.Pool) {
 		t.Fatalf("failed to truncate tables: %v", err)
 	}
 }
+
 // Create a seeded event for our integration tests
 
 func seedEvent(t *testing.T, pool *pgxpool.Pool, capacity int) string {
@@ -164,8 +163,6 @@ func TestRegisterIntegration_HappyPath(t *testing.T) {
 	defer resetDB(t, pool)
 	eventID := seedEvent(t, pool, 2)
 
-	
-
 	body := `{
 			"name": "Sam Doe",
 			"email": "sam@example.com"
@@ -173,10 +170,9 @@ func TestRegisterIntegration_HappyPath(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/events/"+eventID+"/register", bytes.NewBufferString(body))
 
-	token := signupAndGetToken(t,router,"sam@example.com")
+	token := signupAndGetToken(t, router, "sam@example.com")
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer " +token)
-
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -217,7 +213,6 @@ func TestRegisterIntegration_DuplicateEmail(t *testing.T) {
 			"name": "Sam Doe",
 			"email": "sam@example.com"
 	 }`
-
 
 	// set up token
 	token := signupAndGetToken(t, router, "sam@example.com")
@@ -264,7 +259,6 @@ func TestRegisterIntegration_EventFull(t *testing.T) {
 	defer resetDB(t, pool)
 	// capacity = 1
 	eventID := seedEvent(t, pool, 1)
-
 
 	body1 := `{"name":"User One","email":"user1@example.com"}`
 	body2 := `{"name":"User Two","email":"user2@example.com"}`
@@ -313,7 +307,6 @@ func TestRegisterIntegration_EventNotFound(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/events/"+nonExistentID+"/register", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
-
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)

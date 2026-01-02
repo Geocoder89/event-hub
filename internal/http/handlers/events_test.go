@@ -13,12 +13,18 @@ import (
 	"github.com/geocoder89/eventhub/internal/domain/event"
 	"github.com/geocoder89/eventhub/internal/http/handlers"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // Make sure Gin does not spam the console during the test
 
 func init() {
 	gin.SetMode(gin.TestMode)
+}
+
+
+func newUUID() string {
+	return uuid.NewString()
 }
 
 // Fake repository implementations of the handlers.EventCreator interface
@@ -106,7 +112,7 @@ func TestCreateEventHandler(t *testing.T) {
 			repoSetUp: func(f *fakeEventsRepo) {
 				f.createFn = func(ctx context.Context, req event.CreateEventRequest) (event.Event, error) {
 					return event.Event{
-						ID:          "test-id",
+						ID:          newUUID(),
 						Title:       req.Title,
 						Description: req.Description,
 						City:        req.City,
@@ -177,6 +183,7 @@ func TestCreateEventHandler(t *testing.T) {
 
 func TestListEventsHandler(t *testing.T) {
 	now := time.Now().UTC()
+	// validId := newUUID()
 
 	tests := []struct {
 		name           string
@@ -274,6 +281,8 @@ func TestListEventsHandler(t *testing.T) {
 
 func TestUpdateEventHandler(t *testing.T) {
 	now := time.Now().UTC()
+	validID := newUUID()
+	missingID := newUUID()
 
 	tests := []struct {
 		name           string
@@ -284,7 +293,7 @@ func TestUpdateEventHandler(t *testing.T) {
 	}{
 		{
 			name: "success",
-			url:  "/events/id-1",
+			url:  "/events/" + validID,
 			body: `{
 			"title": "Updated Title",
 			"description": "Updated description",
@@ -313,7 +322,7 @@ func TestUpdateEventHandler(t *testing.T) {
 
 		{
 			name: "not_found",
-			url:  "/events/id-does-not-exist",
+			url:  "/events/" + missingID,
 			body: `{
 				"title": "Updated Title",
 				"description": "Updated Desc",
@@ -332,7 +341,7 @@ func TestUpdateEventHandler(t *testing.T) {
 		// invalid payload.
 		{
 			name: "validation_error",
-			url:  "/events/id-1",
+			url:  "/events/" + validID,
 			body: `{"title": ""}`, // invalid payload
 			repoSetup: func(f *fakeEventsRepo) {
 				// repo should not be called at all in this case.
@@ -344,7 +353,7 @@ func TestUpdateEventHandler(t *testing.T) {
 
 		{
 			name: "repo_error",
-			url:  "/events/id-1",
+			url:  "/events/" + validID,
 			body: `{
 				"title": "Updated Title",
 				"description": "Updated Desc",
@@ -389,6 +398,8 @@ func TestUpdateEventHandler(t *testing.T) {
 
 func TestGetEventByIdHandler(t *testing.T) {
 	now := time.Now().UTC()
+	validID := newUUID()
+missingID := newUUID()
 
 	tests := []struct {
 		name           string
@@ -398,11 +409,11 @@ func TestGetEventByIdHandler(t *testing.T) {
 	}{
 		{
 			name: "success",
-			url:  "/events/id-1",
+			url:  "/events/" + validID,
 			repoSetup: func(f *fakeEventsRepo) {
 				f.getFn = func(ctx context.Context, id string) (event.Event, error) {
 					return event.Event{
-						ID:          "id-1",
+						ID:          id,
 						Title:       "Event-1",
 						Description: "Desc",
 						City:        "Toronto",
@@ -417,7 +428,7 @@ func TestGetEventByIdHandler(t *testing.T) {
 		},
 		{
 			name: "not_found",
-			url:  "/events/missing-id",
+			url:  "/events/" + missingID,
 			repoSetup: func(f *fakeEventsRepo) {
 				f.getFn = func(ctx context.Context, id string) (event.Event, error) {
 					return event.Event{}, event.ErrNotFound
@@ -427,7 +438,7 @@ func TestGetEventByIdHandler(t *testing.T) {
 		},
 		{
 			name: "repo_error",
-			url:  "/events/id-1",
+			url:  "/events/" + validID,
 			repoSetup: func(f *fakeEventsRepo) {
 				f.getFn = func(ctx context.Context, id string) (event.Event, error) {
 					return event.Event{}, errors.New("db error")
@@ -463,6 +474,9 @@ func TestGetEventByIdHandler(t *testing.T) {
 }
 
 func TestDeleteEventHandler(t *testing.T) {
+
+	validID := newUUID()
+missingID := newUUID()
 	tests := []struct {
 		name           string
 		url            string
@@ -471,7 +485,7 @@ func TestDeleteEventHandler(t *testing.T) {
 	}{
 		{
 			name: "success",
-			url:  "/events/id-1",
+			url:  "/events/"+ validID,
 			repoSetup: func(f *fakeEventsRepo) {
 				f.deleteFn = func(ctx context.Context, id string) error {
 					return nil
@@ -483,7 +497,7 @@ func TestDeleteEventHandler(t *testing.T) {
 
 		{
 			name: "not_found",
-			url:  "/events/does-not-exists",
+			url:  "/events/" + missingID,
 			repoSetup: func(f *fakeEventsRepo) {
 				f.deleteFn = func(ctx context.Context, id string) error {
 					return event.ErrNotFound
@@ -493,7 +507,7 @@ func TestDeleteEventHandler(t *testing.T) {
 		},
 		{
 			name: "repo_error",
-			url:  "/events/id-1",
+			url:  "/events/" + validID,
 			repoSetup: func(f *fakeEventsRepo) {
 				f.deleteFn = func(ctx context.Context, id string) error {
 					return errors.New("db error")

@@ -28,18 +28,18 @@ type ListEventsFilter struct {
 var ErrNotFound = errors.New("event not found")
 
 type CreateEventRequest struct {
-	Title       string    `json:"title" binding:"required,min=2"` // required and minimum must be 2
-	Description string    `json:"description"`
-	City        string    `json:"city"`
-	StartAt     time.Time `json:"startAt" binding:"required"`       // required
-	Capacity    int       `json:"capacity" binding:"required,gt=0"` // required and must be greater than 0
+	Title       string    `json:"title" binding:"required,min=3,max=120"`
+	Description string    `json:"description" binding:"omitempty,max=1000"`
+	City        string    `json:"city" binding:"omitempty,min=2,max=80"`
+	StartAt     time.Time `json:"startAt" binding:"required"`
+	Capacity    int       `json:"capacity" binding:"required,min=1,max=50000"`
 }
 
 // a full update payload, might switch to a patch which optionally provides means for partial updates.
 type UpdateEventRequest struct {
-	Title       string    `json:"title" binding:"required,min=3"`
-	Description string    `json:"description" binding:"required"`
-	City        string    `json:"city" binding:"required"`
+	Title       string    `json:"title" binding:"required,min=3,max=120"`
+	Description string    `json:"description" binding:"omitempty,max=1000"`
+	City        string    `json:"city" binding:"omitempty,min=2,max=80"`
 	StartAt     time.Time `json:"startAt" binding:"required"`
-	Capacity    int       `json:"capacity" binding:"required,min=1"`
+	Capacity    int       `json:"capacity" binding:"required,min=1,max=50000"`
 }

@@ -26,8 +26,8 @@ var ErrNotFound = errors.New("registration not found")
 type CreateRegistrationRequest struct {
 	EventID string `json:"-"`
 	UserID  string `json:"-"`
-	Name    string `json:"name" binding:"required,min=2"`
-	Email   string `json:"email" binding:"required,email"`
+	Name    string `json:"name" binding:"required,min=2,max=100"`
+	Email   string `json:"email" binding:"required,email,max=254"`
 }
 
 // A factory to build a Registration from the incoming DTO

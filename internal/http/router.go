@@ -30,6 +30,12 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 	r.Use(gin.Recovery())
 	r.Use(middlewares.RequestID())
 	r.Use(middlewares.RequestLogger(log))
+	r.Use(middlewares.CORSMiddleware([]string{
+		"http://localhost:3000",
+	}))
+	r.Use(middlewares.SecurityHeaders())
+	r.Use(middlewares.MaxBodyBytes(1 << 20)) //1MB max body
+	r.Use(middlewares.RequireJSON())         // Require JSON content type for post and put requests.
 
 	ping := func() error {
 		if pool == nil {

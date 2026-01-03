@@ -22,7 +22,6 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-
 func newUUID() string {
 	return uuid.NewString()
 }
@@ -399,7 +398,7 @@ func TestUpdateEventHandler(t *testing.T) {
 func TestGetEventByIdHandler(t *testing.T) {
 	now := time.Now().UTC()
 	validID := newUUID()
-missingID := newUUID()
+	missingID := newUUID()
 
 	tests := []struct {
 		name           string
@@ -476,7 +475,7 @@ missingID := newUUID()
 func TestDeleteEventHandler(t *testing.T) {
 
 	validID := newUUID()
-missingID := newUUID()
+	missingID := newUUID()
 	tests := []struct {
 		name           string
 		url            string
@@ -485,7 +484,7 @@ missingID := newUUID()
 	}{
 		{
 			name: "success",
-			url:  "/events/"+ validID,
+			url:  "/events/" + validID,
 			repoSetup: func(f *fakeEventsRepo) {
 				f.deleteFn = func(ctx context.Context, id string) error {
 					return nil

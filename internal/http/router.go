@@ -10,6 +10,7 @@ import (
 	"github.com/geocoder89/eventhub/internal/config"
 	"github.com/geocoder89/eventhub/internal/http/handlers"
 	"github.com/geocoder89/eventhub/internal/http/middlewares"
+	"github.com/geocoder89/eventhub/internal/queue/redisclient"
 
 	// "github.com/geocoder89/eventhub/internal/repo/memory"
 	"github.com/geocoder89/eventhub/internal/repo/postgres"
@@ -23,6 +24,12 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 	if cfgEnv != "dev" {
 		gin.SetMode(gin.ReleaseMode)
 	}
+
+	redis := redisclient.New(redisclient.Config{
+		Addr: cfg.RedisAddr,
+		Password: cfg.RedisPassword,
+		DB: cfg.RedisDB,
+	})
 	r := gin.New()
 
 	// middleware
@@ -37,19 +44,37 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 	r.Use(middlewares.MaxBodyBytes(1 << 20)) //1MB max body
 	r.Use(middlewares.RequireJSON())         // Require JSON content type for post and put requests.
 
-	ping := func() error {
-		if pool == nil {
-			return nil
+	readyCheck := func() error {
+		// postgres ping
+		if pool != nil {
+		
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			err := pool.Ping(ctx)
+
+			if err != nil {
+				return err
+			}
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		// Redis ping
+
+		{
+			ctx,cancel := context.WithTimeout(context.Background(), 1 *time.Second)
 		defer cancel()
 
-		return pool.Ping(ctx)
+		err := redis.Ping(ctx)
+
+		if err != nil {
+			return err
+		}
+	}
+
+		return nil
 	}
 
 	// health
-	h := handlers.NewHealthHandler(ping)
+	h := handlers.NewHealthHandler(readyCheck)
 
 	// events stored in memory for now
 
@@ -61,6 +86,8 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 	registrationRepo := postgres.NewRegistrationsRepo(pool)
 	usersRepo := postgres.NewUsersRepo(pool)
 	refreshTokensRepo := postgres.NewRefreshTokensRepo(pool)
+	jobsRepo := postgres.NewJobsRepo(pool)
+	_ = jobsRepo // temporary assignment ahead of tomorrow.
 
 	// JWT Manager
 	jwtManager := auth.NewManager(

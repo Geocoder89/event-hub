@@ -7,27 +7,27 @@ import (
 )
 
 type HealthHandler struct {
-	ping func() error
+	ready func() error
 }
 
 // create a new instance of the health handler
-func NewHealthHandler(ping func() error) *HealthHandler {
+func NewHealthHandler(ready func() error) *HealthHandler {
 	return &HealthHandler{
-		ping: ping,
+		ready: ready,
 	}
 }
 
 func (h *HealthHandler) Healthz(ctx *gin.Context) {
-	ctx.JSON(200, gin.H{"status": "ok"})
+	ctx.JSON(http.StatusOK, gin.H{"ok":true})
 }
 
 func (h *HealthHandler) Readyz(ctx *gin.Context) {
-	// DB connection check
-	if h.ping != nil {
-		err := h.ping()
+
+	if h.ready != nil {
+		err := h.ready()
 
 		if err != nil {
-			RespondError(ctx, http.StatusServiceUnavailable, "not_ready", "not_available", gin.H{"dependency": "postgres"})
+			RespondError(ctx, http.StatusServiceUnavailable, "not_ready", "not_available", gin.H{"ok": false, "error": err.Error(),})
 			return
 		}
 

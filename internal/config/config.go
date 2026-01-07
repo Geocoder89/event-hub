@@ -20,9 +20,9 @@ type Config struct {
 	JWTSecret           string
 	JWTAccessTTLMinutes int
 	JWTRefreshTTLDays   int
-	RedisAddr     string
-  RedisPassword string
-  RedisDB       int
+	RedisAddr           string
+	RedisPassword       string
+	RedisDB             int
 }
 
 func Load() Config {

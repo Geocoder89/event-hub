@@ -5,8 +5,7 @@ import (
 	"fmt"
 )
 
-
-func EncodePayload (t JobType, payload any)([]byte, error) {
+func EncodePayload(t JobType, payload any) ([]byte, error) {
 	if !t.IsValid() {
 		return nil, ErrInvalidJobType
 	}
@@ -16,7 +15,7 @@ func EncodePayload (t JobType, payload any)([]byte, error) {
 		_, ok := payload.(PublishEventPayload)
 
 		if !ok {
-			_, ok2 := payload.(*PublishEventPayload) 
+			_, ok2 := payload.(*PublishEventPayload)
 
 			if !ok2 {
 				return nil, ErrPayloadTypeMismatch
@@ -24,7 +23,7 @@ func EncodePayload (t JobType, payload any)([]byte, error) {
 		}
 
 	case JobSendRegistrationConfirmation:
-		_,ok := payload.(SendRegistrationConfirmationPayload) 
+		_, ok := payload.(SendRegistrationConfirmationPayload)
 
 		if !ok {
 			_, ok2 := payload.(*SendRegistrationConfirmationPayload)
@@ -35,7 +34,7 @@ func EncodePayload (t JobType, payload any)([]byte, error) {
 		}
 
 	case JobExportRegistrationsCSV:
-			_,ok := payload.(ExportRegistrationsCSVPayload) 
+		_, ok := payload.(ExportRegistrationsCSVPayload)
 
 		if !ok {
 			_, ok2 := payload.(*ExportRegistrationsCSVPayload)
@@ -44,19 +43,17 @@ func EncodePayload (t JobType, payload any)([]byte, error) {
 				return nil, ErrPayloadTypeMismatch
 			}
 		}
-		
-	}
 
+	}
 
 	b, err := json.Marshal(payload)
 
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidJobPayload, err)
 	}
-	
+
 	return b, nil
 }
-
 
 // DecodePayload unmarshals job.Payload into the correct typed payload struct.
 func DecodePayload(j Job) (any, error) {

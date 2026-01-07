@@ -10,21 +10,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-
-
 type JobsRepo struct {
 	pool *pgxpool.Pool
 }
 
-func NewJobsRepo (pool *pgxpool.Pool) *JobsRepo {
+func NewJobsRepo(pool *pgxpool.Pool) *JobsRepo {
 	return &JobsRepo{pool: pool}
 }
-
 
 func (r *JobsRepo) Create(ctx context.Context, req job.CreateRequest) (job.Job, error) {
 	j := job.New(req)
 
-	 _, err := r.pool.Exec(ctx, `INSERT INTO jobs(
+	_, err := r.pool.Exec(ctx, `INSERT INTO jobs(
 	 id, type, payload, status, attempts,max_attempts, run_at, locked_at, locked_by, last_error, created_at, updated_at
 	 ) VALUES (
 		$1,$2,$3,$4,
@@ -33,17 +30,16 @@ func (r *JobsRepo) Create(ctx context.Context, req job.CreateRequest) (job.Job, 
 	 
 	 )
 	 
-	 `, j.ID, j.Type, j.Payload, string(j.Status), j.Attempts, j.MaxAttempts, j.RunAt, j.LockedAt, j.LockedBy,j.LastError, j.CreatedAt, j.UpdatedAt)
+	 `, j.ID, j.Type, j.Payload, string(j.Status), j.Attempts, j.MaxAttempts, j.RunAt, j.LockedAt, j.LockedBy, j.LastError, j.CreatedAt, j.UpdatedAt)
 
-
-	 if err != nil {
+	if err != nil {
 		return job.Job{}, err
-	 }
+	}
 
-	 return j, nil
+	return j, nil
 }
 
-func (r *JobsRepo) MarkFailed (ctx context.Context, id string, errMsg string) error {
+func (r *JobsRepo) MarkFailed(ctx context.Context, id string, errMsg string) error {
 	tag, err := r.pool.Exec(ctx, `
 	UPDATE jobss
 	SET status = 'failed',
@@ -64,9 +60,9 @@ func (r *JobsRepo) MarkFailed (ctx context.Context, id string, errMsg string) er
 	return nil
 }
 
-func ( r *JobsRepo) Reschedule (ctx context.Context, id string, runAt time.Time, errMsg string) error {
+func (r *JobsRepo) Reschedule(ctx context.Context, id string, runAt time.Time, errMsg string) error {
 
-	// Useful for retries/backoff 
+	// Useful for retries/backoff
 	tag, err := r.pool.Exec(ctx, `
 		UPDATE jobs
 		SET status = 'pending',
@@ -79,7 +75,6 @@ func ( r *JobsRepo) Reschedule (ctx context.Context, id string, runAt time.Time,
 		WHERE id = $1
 	`, id, runAt, errMsg)
 
-
 	if err != nil {
 		return err
 	}
@@ -87,9 +82,7 @@ func ( r *JobsRepo) Reschedule (ctx context.Context, id string, runAt time.Time,
 		return job.ErrJobNotFound
 	}
 	return nil
-} 
-
-
+}
 
 func (r *JobsRepo) ClaimNext(ctx context.Context, workerID string) (job.Job, error) {
 	// Single statement claim using SKIP LOCKED pattern.

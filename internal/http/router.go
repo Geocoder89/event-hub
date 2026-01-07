@@ -26,9 +26,9 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 	}
 
 	redis := redisclient.New(redisclient.Config{
-		Addr: cfg.RedisAddr,
+		Addr:     cfg.RedisAddr,
 		Password: cfg.RedisPassword,
-		DB: cfg.RedisDB,
+		DB:       cfg.RedisDB,
 	})
 	r := gin.New()
 
@@ -47,7 +47,7 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 	readyCheck := func() error {
 		// postgres ping
 		if pool != nil {
-		
+
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			err := pool.Ping(ctx)
@@ -60,15 +60,15 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 		// Redis ping
 
 		{
-			ctx,cancel := context.WithTimeout(context.Background(), 1 *time.Second)
-		defer cancel()
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
 
-		err := redis.Ping(ctx)
+			err := redis.Ping(ctx)
 
-		if err != nil {
-			return err
+			if err != nil {
+				return err
+			}
 		}
-	}
 
 		return nil
 	}

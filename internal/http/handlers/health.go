@@ -18,7 +18,7 @@ func NewHealthHandler(ready func() error) *HealthHandler {
 }
 
 func (h *HealthHandler) Healthz(ctx *gin.Context) {
-	ctx.JSON(http.StatusOK, gin.H{"ok":true})
+	ctx.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 func (h *HealthHandler) Readyz(ctx *gin.Context) {
@@ -27,7 +27,7 @@ func (h *HealthHandler) Readyz(ctx *gin.Context) {
 		err := h.ready()
 
 		if err != nil {
-			RespondError(ctx, http.StatusServiceUnavailable, "not_ready", "not_available", gin.H{"ok": false, "error": err.Error(),})
+			RespondError(ctx, http.StatusServiceUnavailable, "not_ready", "not_available", gin.H{"ok": false, "error": err.Error()})
 			return
 		}
 

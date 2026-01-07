@@ -1,4 +1,3 @@
-
 package jobs
 
 import (

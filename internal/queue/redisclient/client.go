@@ -12,19 +12,18 @@ type Client struct {
 }
 
 type Config struct {
-	Addr string
+	Addr     string
 	Password string
-	DB int
+	DB       int
 }
-
 
 func New(cfg Config) *Client {
 	redisdb := redis.NewClient(&redis.Options{
-		Addr: cfg.Addr,
-		Password: cfg.Password,
-		DB: cfg.DB,
-		DialTimeout: 2 * time.Second,
-		ReadTimeout: 2 * time.Second,
+		Addr:         cfg.Addr,
+		Password:     cfg.Password,
+		DB:           cfg.DB,
+		DialTimeout:  2 * time.Second,
+		ReadTimeout:  2 * time.Second,
 		WriteTimeout: 2 * time.Second,
 	})
 

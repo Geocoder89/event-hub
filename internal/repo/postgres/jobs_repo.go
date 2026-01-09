@@ -60,6 +60,27 @@ func (r *JobsRepo) MarkFailed(ctx context.Context, id string, errMsg string) err
 	return nil
 }
 
+func (r *JobsRepo) MarkDone(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE jobs
+		SET status = 'done',
+			locked_at = NULL,
+			locked_by = NULL,
+			last_error = NULL,
+			updated_at = NOW()
+		WHERE id = $1
+		`, id)
+
+	if err != nil {
+		return err
+	}
+
+	if tag.RowsAffected() == 0 {
+		return job.ErrJobNotFound
+	}
+	return nil
+}
+
 func (r *JobsRepo) Reschedule(ctx context.Context, id string, runAt time.Time, errMsg string) error {
 
 	// Useful for retries/backoff
@@ -121,6 +142,39 @@ func (r *JobsRepo) ClaimNext(ctx context.Context, workerID string) (job.Job, err
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return job.Job{}, job.ErrJobNotFound // treat as “no job available”
+		}
+		return job.Job{}, err
+	}
+
+	j.Status = job.Status(status)
+	return j, nil
+}
+
+func (r *JobsRepo) FetchNextPending(ctx context.Context) (job.Job, error) {
+	var j job.Job
+	var status string
+
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, type, payload, status,
+		       attempts, max_attempts,
+		       run_at, locked_at, locked_by,
+		       last_error, created_at, updated_at
+		FROM jobs
+		WHERE status = 'pending'
+		  AND run_at <= NOW()
+		  AND attempts < max_attempts
+		ORDER BY run_at ASC, created_at ASC
+		LIMIT 1
+	`).Scan(
+		&j.ID, &j.Type, &j.Payload, &status,
+		&j.Attempts, &j.MaxAttempts,
+		&j.RunAt, &j.LockedAt, &j.LockedBy,
+		&j.LastError, &j.CreatedAt, &j.UpdatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return job.Job{}, job.ErrJobNotFound // "nothing to do"
 		}
 		return job.Job{}, err
 	}

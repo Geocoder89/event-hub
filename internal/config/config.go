@@ -56,7 +56,7 @@ func Load() Config {
 
 func buildDBURL() string {
 	host := getEnv("DB_HOST", "127.0.0.1")
-	port := getEnv("DB_PORT", "5432")
+	port := getEnv("DB_PORT", "5433")
 	user := getEnv("DB_USER", "eventhub")
 	pass := getEnv("DB_PASSWORD", "eventhub")
 	name := getEnv("DB_NAME", "eventhub")

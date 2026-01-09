@@ -64,3 +64,6 @@ migrate-down: check-db-env
 	@GOOSE_DRIVER=postgres \
 	GOOSE_DBSTRING="user=$(DB_USER) password='$(DB_PASSWORD)' host=$(DB_HOST) port=$(DB_PORT) dbname=$(DB_NAME) sslmode=$(DB_SSLMODE)" \
 	goose -dir $(GOOSE_DIR) down
+
+worker:
+		go run ./cmd/worker

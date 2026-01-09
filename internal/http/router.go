@@ -87,7 +87,6 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 	usersRepo := postgres.NewUsersRepo(pool)
 	refreshTokensRepo := postgres.NewRefreshTokensRepo(pool)
 	jobsRepo := postgres.NewJobsRepo(pool)
-	_ = jobsRepo // temporary assignment ahead of tomorrow.
 
 	// JWT Manager
 	jwtManager := auth.NewManager(
@@ -98,6 +97,7 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 	// Wire up more handler
 	eventsHandler := handlers.NewEventsHandler(eventsRepo)
 	registrationHandler := handlers.NewRegistrationHandler(registrationRepo)
+	jobsHandler := handlers.NewJobsHandler(jobsRepo)
 	authHandler := handlers.NewAuthHandler(usersRepo, usersRepo, jwtManager, refreshTokensRepo, cfg)
 	authMiddleware := middlewares.NewAuthMiddleware(jwtManager)
 
@@ -131,6 +131,7 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 		authed.POST("/events/:id/register", registerLimiter.RateLimiterMiddleware(middlewares.KeyByUserOrIP), registrationHandler.Register)
 		authed.GET("/events/:id/registrations", registrationHandler.ListForEvent)
 		authed.DELETE("/events/:id/registrations/:registrationId", registrationHandler.Cancel)
+		authed.POST("/events/:id/publish", jobsHandler.PublishEvent)
 	}
 
 	// admin authorized route set up.

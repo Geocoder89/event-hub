@@ -30,6 +30,8 @@ type Job struct {
 	LockedAt    *time.Time      `json:"lockedAt,omitempty"`
 	LockedBy    *string         `json:"lockedBy,omitempty"`
 	LastError   *string         `json:"lastError,omitempty"`
+	// new Idempotency key
+	IdempotencyKey *string 			`json:"idempotencyKey,omitempty"`
 	CreatedAt   time.Time       `json:"createdAt"`
 	UpdatedAt   time.Time       `json:"updatedAt"`
 }
@@ -39,6 +41,7 @@ type CreateRequest struct {
 	Payload     json.RawMessage
 	RunAt       time.Time
 	MaxAttempts int
+	IdempotencyKey *string
 }
 
 func New(req CreateRequest) Job {

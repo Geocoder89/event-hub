@@ -194,3 +194,17 @@ func (r *EventsRepo) Delete(ctx context.Context, id string) error {
 
 	return nil
 }
+
+func (r *EventsRepo) MarkPublished(ctx context.Context, eventID string) (bool, error) {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE events
+		SET published_at = NOW(),
+		    updated_at = NOW()
+		WHERE id = $1
+		  AND published_at IS NULL
+	`, eventID)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
+}

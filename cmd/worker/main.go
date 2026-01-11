@@ -34,10 +34,11 @@ func main() {
 	defer pool.Close()
 
 	jobsRepo := postgres.NewJobsRepo(pool)
+	eventsRepo := postgres.NewEventsRepo(pool)
 
 	w := worker.New(worker.Config{
 		PollInterval: 2 * time.Second,
-	}, jobsRepo)
+	}, jobsRepo, eventsRepo)
 
 	log.Println("worker has started")
 

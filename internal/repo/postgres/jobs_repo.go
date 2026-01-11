@@ -7,6 +7,7 @@ import (
 
 	"github.com/geocoder89/eventhub/internal/domain/job"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -18,19 +19,28 @@ func NewJobsRepo(pool *pgxpool.Pool) *JobsRepo {
 	return &JobsRepo{pool: pool}
 }
 
+func IsUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return true
+	}
+	return false
+}
+
 func (r *JobsRepo) Create(ctx context.Context, req job.CreateRequest) (job.Job, error) {
 	j := job.New(req)
 
 	_, err := r.pool.Exec(ctx, `INSERT INTO jobs(
-	 id, type, payload, status, attempts,max_attempts, run_at, locked_at, locked_by, last_error, created_at, updated_at
+	 id, type, payload, status, attempts,max_attempts, run_at, locked_at, locked_by, last_error,idempotency_key, created_at, updated_at
 	 ) VALUES (
 		$1,$2,$3,$4,
 		$5,$6,$7,$8,$9,
-		$10,$11,$12
+		$10,$11,$12,$13
 	 
 	 )
 	 
-	 `, j.ID, j.Type, j.Payload, string(j.Status), j.Attempts, j.MaxAttempts, j.RunAt, j.LockedAt, j.LockedBy, j.LastError, j.CreatedAt, j.UpdatedAt)
+	 `, j.ID, j.Type, j.Payload, string(j.Status), j.Attempts, j.MaxAttempts, j.RunAt, j.LockedAt, j.LockedBy, j.LastError, req.IdempotencyKey, j.CreatedAt, j.UpdatedAt)
 
 	if err != nil {
 		return job.Job{}, err
@@ -41,25 +51,23 @@ func (r *JobsRepo) Create(ctx context.Context, req job.CreateRequest) (job.Job, 
 
 func (r *JobsRepo) MarkFailed(ctx context.Context, id string, errMsg string) error {
 	tag, err := r.pool.Exec(ctx, `
-	UPDATE jobss
-	SET status = 'failed',
-	locked_at = NULL
-	locked_by = NULL,
-	last_error = $2,
-	updated_at = NOW()
+		UPDATE jobs
+		SET status = 'failed',
+		    locked_at = NULL,
+		    locked_by = NULL,
+		    last_error = $2,
+		    updated_at = NOW()
+		WHERE id = $1
 	`, id, errMsg)
 
 	if err != nil {
 		return err
 	}
-
 	if tag.RowsAffected() == 0 {
 		return job.ErrJobNotFound
 	}
-
 	return nil
 }
-
 func (r *JobsRepo) MarkDone(ctx context.Context, id string) error {
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE jobs
@@ -131,12 +139,12 @@ func (r *JobsRepo) ClaimNext(ctx context.Context, workerID string) (job.Job, err
 		RETURNING id, type, payload, status,
 		          attempts, max_attempts,
 		          run_at, locked_at, locked_by,
-		          last_error, created_at, updated_at
+		          last_error,idempotency_key, created_at, updated_at
 	`, workerID).Scan(
 		&j.ID, &j.Type, &j.Payload, &status,
 		&j.Attempts, &j.MaxAttempts,
 		&j.RunAt, &j.LockedAt, &j.LockedBy,
-		&j.LastError, &j.CreatedAt, &j.UpdatedAt,
+		&j.LastError,&j.IdempotencyKey, &j.CreatedAt, &j.UpdatedAt,
 	)
 
 	if err != nil {
@@ -158,7 +166,7 @@ func (r *JobsRepo) FetchNextPending(ctx context.Context) (job.Job, error) {
 		SELECT id, type, payload, status,
 		       attempts, max_attempts,
 		       run_at, locked_at, locked_by,
-		       last_error, created_at, updated_at
+		       last_error,idempotency_key, created_at, updated_at
 		FROM jobs
 		WHERE status = 'pending'
 		  AND run_at <= NOW()
@@ -169,12 +177,45 @@ func (r *JobsRepo) FetchNextPending(ctx context.Context) (job.Job, error) {
 		&j.ID, &j.Type, &j.Payload, &status,
 		&j.Attempts, &j.MaxAttempts,
 		&j.RunAt, &j.LockedAt, &j.LockedBy,
-		&j.LastError, &j.CreatedAt, &j.UpdatedAt,
+		&j.LastError, &j.IdempotencyKey, &j.CreatedAt, &j.UpdatedAt,
 	)
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return job.Job{}, job.ErrJobNotFound // "nothing to do"
+		}
+		return job.Job{}, err
+	}
+
+	j.Status = job.Status(status)
+	return j, nil
+}
+
+
+
+func (r *JobsRepo) GetByIdempotencyKey(ctx context.Context, key string) (job.Job, error) {
+	var j job.Job
+	var status string
+
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, type, payload, status,
+		       attempts, max_attempts,
+		       run_at, locked_at, locked_by,
+		       last_error, idempotency_key,
+		       created_at, updated_at
+		FROM jobs
+		WHERE idempotency_key = $1
+	`, key).Scan(
+		&j.ID, &j.Type, &j.Payload, &status,
+		&j.Attempts, &j.MaxAttempts,
+		&j.RunAt, &j.LockedAt, &j.LockedBy,
+		&j.LastError, &j.IdempotencyKey,
+		&j.CreatedAt, &j.UpdatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return job.Job{}, job.ErrJobNotFound
 		}
 		return job.Job{}, err
 	}

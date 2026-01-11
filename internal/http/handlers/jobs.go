@@ -10,12 +10,15 @@ import (
 	"github.com/geocoder89/eventhub/internal/domain/job"
 	"github.com/geocoder89/eventhub/internal/http/middlewares"
 	"github.com/geocoder89/eventhub/internal/jobs"
+	"github.com/geocoder89/eventhub/internal/repo/postgres"
+
 	"github.com/geocoder89/eventhub/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
 type JobsCreator interface {
 	Create(ctx context.Context, req job.CreateRequest) (job.Job, error)
+	GetByIdempotencyKey(ctx context.Context, key string) (job.Job, error)
 }
 
 type JobsHandler struct {
@@ -58,15 +61,35 @@ func (h *JobsHandler) PublishEvent(ctx *gin.Context) {
 	cctx, cancel := config.WithTimeout(2 * time.Second)
 
 	defer cancel()
+	key := "publish:event:" + eventID
 
 	j, err := h.jobs.Create(cctx, job.CreateRequest{
-		Type:        jobs.TypeEventPublish,
-		Payload:     json.RawMessage(raw),
-		RunAt:       time.Now().UTC(),
-		MaxAttempts: 25,
+		Type:           jobs.TypeEventPublish,
+		Payload:        json.RawMessage(raw),
+		RunAt:          time.Now().UTC(),
+		MaxAttempts:    25,
+		IdempotencyKey: &key,
 	})
 
 	if err != nil {
+		if postgres.IsUniqueViolation(err) {
+			existing, gerr := h.jobs.GetByIdempotencyKey(cctx, key)
+
+			if gerr != nil {
+				RespondInternal(ctx, "Could not enqueue job")
+			}
+
+			ctx.JSON(http.StatusAccepted, gin.H{
+				"jobId":           existing.ID,
+				"status":          existing.Status,
+				"type":            existing.Type,
+				"alreadyEnqueued": true,
+			})
+
+			return
+
+		}
+
 		RespondInternal(ctx, "Could not enqueue job")
 		return
 	}
@@ -76,4 +99,5 @@ func (h *JobsHandler) PublishEvent(ctx *gin.Context) {
 		"status": j.Status,
 		"type":   j.Type,
 	})
+
 }

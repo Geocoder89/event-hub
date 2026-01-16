@@ -34,12 +34,33 @@ func NewJobsHandler(jobsRepo JobsCreator) *JobsHandler {
 func (h *JobsHandler) PublishEvent(ctx *gin.Context) {
 	eventID := ctx.Param("id")
 
+	runAt := time.Now().UTC()
+
 	if !utils.IsUUID(eventID) {
 		RespondBadRequest(ctx, "invalid_request", "invalid_id")
 		return
 	}
 
 	userID, ok := middlewares.UserIDFromContext(ctx)
+
+	runAtStr := ctx.Query("runAt")
+
+	if runAtStr != "" {
+		t, err := time.Parse(time.RFC3339, runAtStr)
+
+		if err != nil {
+			RespondBadRequest(ctx, "invalid_query", "runAt must be RFC 3339 Datetime")
+			return
+		}
+
+		// small guard: allow slight clock drift but reject clearly-in-the-past schedules
+		if t.Before(time.Now().UTC().Add(-30 * time.Second)) {
+			RespondBadRequest(ctx, "invalid_query", "runAt must be now or in the future")
+			return
+		}
+
+		runAt = t.UTC()
+	}
 
 	if !ok || userID == "" {
 		RespondUnAuthorized(ctx, "unauthorized", "Missing identity")
@@ -66,7 +87,7 @@ func (h *JobsHandler) PublishEvent(ctx *gin.Context) {
 	j, err := h.jobs.Create(cctx, job.CreateRequest{
 		Type:           jobs.TypeEventPublish,
 		Payload:        json.RawMessage(raw),
-		RunAt:          time.Now().UTC(),
+		RunAt:          runAt,
 		MaxAttempts:    25,
 		IdempotencyKey: &key,
 	})

@@ -144,7 +144,7 @@ func (r *JobsRepo) ClaimNext(ctx context.Context, workerID string) (job.Job, err
 		&j.ID, &j.Type, &j.Payload, &status,
 		&j.Attempts, &j.MaxAttempts,
 		&j.RunAt, &j.LockedAt, &j.LockedBy,
-		&j.LastError,&j.IdempotencyKey, &j.CreatedAt, &j.UpdatedAt,
+		&j.LastError, &j.IdempotencyKey, &j.CreatedAt, &j.UpdatedAt,
 	)
 
 	if err != nil {
@@ -191,8 +191,6 @@ func (r *JobsRepo) FetchNextPending(ctx context.Context) (job.Job, error) {
 	return j, nil
 }
 
-
-
 func (r *JobsRepo) GetByIdempotencyKey(ctx context.Context, key string) (job.Job, error) {
 	var j job.Job
 	var status string
@@ -223,3 +221,116 @@ func (r *JobsRepo) GetByIdempotencyKey(ctx context.Context, key string) (job.Job
 	j.Status = job.Status(status)
 	return j, nil
 }
+
+
+// Admin ops endpoints
+
+func (r *JobsRepo) List (ctx context.Context, status *string, limit,offset int)([]job.Job,error) {
+		q := `
+		SELECT id, type, payload, status, attempts,
+		max_attempts, run_at, locked_at, locked_by,
+		last_error, idempotency_key, created_at, updated_at
+		FROM jobs
+		`
+
+		args := [] any{}
+		if status != nil {
+			q += " WHERE status = $1"
+			args = append(args, *status)
+			q += " ORDER BY updated_at DESC"
+			q += " LIMIT $2 OFFSET $3"
+			args = append(args, limit, offset)
+		} else {
+			q += " ORDER BY updated_at DESC LIMIT $1 OFFSET $2"
+			args = append(args, limit,offset)
+		}
+
+		rows, err := r.pool.Query(ctx,q, args...)
+
+		if err != nil {
+			return nil, err
+		}
+
+		defer rows.Close()
+
+		out := make([]job.Job, 0)
+
+		for rows.Next() {
+			var j job.Job
+			var st string
+
+			err = rows.Scan(
+			&j.ID, &j.Type, &j.Payload, &st,
+			&j.Attempts, &j.MaxAttempts,
+			&j.RunAt, &j.LockedAt, &j.LockedBy,
+			&j.LastError, &j.IdempotencyKey,
+			&j.CreatedAt, &j.UpdatedAt,
+			)
+
+			if err != nil {
+				return nil, err
+			}
+
+			j.Status = job.Status(st)
+
+			out = append(out, j)
+		}
+
+		return out, rows.Err()
+}	
+
+
+
+func (r *JobsRepo) GetByID(ctx context.Context, id string) (job.Job, error) {
+	var j job.Job
+	var status string
+
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, type, payload, status,
+		       attempts, max_attempts,
+		       run_at, locked_at, locked_by,
+		       last_error, idempotency_key,
+		       created_at, updated_at
+		FROM jobs
+		WHERE id = $1
+	`, id).Scan(
+		&j.ID, &j.Type, &j.Payload, &status,
+		&j.Attempts, &j.MaxAttempts,
+		&j.RunAt, &j.LockedAt, &j.LockedBy,
+		&j.LastError, &j.IdempotencyKey,
+		&j.CreatedAt, &j.UpdatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return job.Job{}, job.ErrJobNotFound
+		}
+		return job.Job{}, err
+	}
+
+	j.Status = job.Status(status)
+	return j, nil
+}
+
+
+func (r *JobsRepo) Retry(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE jobs
+		SET status = 'pending',
+		    run_at = NOW(),
+		    locked_at = NULL,
+		    locked_by = NULL,
+		    last_error = NULL,
+		    updated_at = NOW()
+		WHERE id = $1 AND status = 'failed'
+	`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return job.ErrJobNotFound
+	}
+	return nil
+}
+
+

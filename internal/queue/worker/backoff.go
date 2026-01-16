@@ -6,9 +6,7 @@ import (
 	"time"
 )
 
-
-
-func ExponentialBackoff (attempt int) time.Duration {
+func ExponentialBackoff(attempt int) time.Duration {
 	base := 2 * time.Second
 
 	capDelay := 5 * time.Minute

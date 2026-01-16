@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -36,8 +37,14 @@ func main() {
 	jobsRepo := postgres.NewJobsRepo(pool)
 	eventsRepo := postgres.NewEventsRepo(pool)
 
+	host, _ := os.Hostname()
+	workerID := host + "-" + strconv.Itoa(os.Getpid())
+
 	w := worker.New(worker.Config{
-		PollInterval: 2 * time.Second,
+		PollInterval:  100 * time.Millisecond,
+		WorkerID:      workerID,
+		Concurrency:   4,
+		ShutdownGrace: 10 * time.Second,
 	}, jobsRepo, eventsRepo)
 
 	log.Println("worker has started")

@@ -99,6 +99,7 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 	registrationHandler := handlers.NewRegistrationHandler(registrationRepo)
 	jobsHandler := handlers.NewJobsHandler(jobsRepo)
 	authHandler := handlers.NewAuthHandler(usersRepo, usersRepo, jwtManager, refreshTokensRepo, cfg)
+	adminJobsHandler := handlers.NewAdminJobsHandler(jobsRepo)
 	authMiddleware := middlewares.NewAuthMiddleware(jwtManager)
 
 	// rate limiter middleware
@@ -131,19 +132,25 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 		authed.POST("/events/:id/register", registerLimiter.RateLimiterMiddleware(middlewares.KeyByUserOrIP), registrationHandler.Register)
 		authed.GET("/events/:id/registrations", registrationHandler.ListForEvent)
 		authed.DELETE("/events/:id/registrations/:registrationId", registrationHandler.Cancel)
-		authed.POST("/events/:id/publish", jobsHandler.PublishEvent)
+		
 	}
 
 	// admin authorized route set up.
 
-	admin := authed.Group("/")
+	admin := authed.Group("/admin")
 	admin.Use(authMiddleware.RequireRole("admin"))
 
 	{
+		// admin ops endpoints
+		admin.GET("/jobs", adminJobsHandler.List)
+		admin.GET("/jobs/:id", adminJobsHandler.GetByID)
+		admin.POST("/jobs/:id/retry",adminJobsHandler.Retry)
+
+		// admin events crud
 		admin.POST("/events", eventsHandler.CreateEvent)
 		admin.PUT("/events/:id", eventsHandler.UpdateEvent)
 		admin.DELETE("/events/:id", eventsHandler.DeleteEvent)
-		// event registration route
+		admin.POST("/events/:id/publish", jobsHandler.PublishEvent)
 	}
 
 	return r

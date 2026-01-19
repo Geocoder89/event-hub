@@ -11,6 +11,7 @@ import (
 	"github.com/geocoder89/eventhub/internal/http/middlewares"
 	"github.com/geocoder89/eventhub/internal/jobs"
 	"github.com/geocoder89/eventhub/internal/repo/postgres"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/geocoder89/eventhub/internal/utils"
 	"github.com/gin-gonic/gin"
@@ -18,6 +19,7 @@ import (
 
 type JobsCreator interface {
 	Create(ctx context.Context, req job.CreateRequest) (job.Job, error)
+	CreateTx(ctx context.Context, tx pgx.Tx, req job.CreateRequest) (job.Job, error)
 	GetByIdempotencyKey(ctx context.Context, key string) (job.Job, error)
 }
 

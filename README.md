@@ -357,3 +357,41 @@ Auth workflow in Postman:
 3) When access expires, call /auth/refresh (cookie-based) to get a new access token.
 
 4) Call /auth/logout to invalidate the refresh session.
+
+
+**Async Jobs & Worker**
+
+* Jobs are persisted in jobs table with status: pending | processing | done | failed
+
+* Workers claim jobs using Postgres FOR UPDATE SKIP LOCKED
+
+* Retries use exponential backoff by rescheduling run_at
+
+* Dead-lettering is status=failed with last_error
+
+* Publish jobs are idempotent:
+
+   * producer dedupe via idempotency_key
+
+   * consumer guard via events.published_at
+
+*Run Locally
+
+Terminal 1:
+```bash
+make dev
+```
+
+Terminal 2:
+
+```bash
+make worker
+```
+
+Schedule a publish
+
+```
+curl -X POST "http://localhost:8080/events/<id>/publish?runAt=2026-01-15T12:00:00Z" \
+  -H "Authorization: Bearer <token>"
+
+```

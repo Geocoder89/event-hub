@@ -21,6 +21,72 @@ func NewRegistrationsRepo(pool *pgxpool.Pool) *RegistrationRepo {
 	}
 }
 
+func (repo *RegistrationRepo) BeginTx(ctx context.Context) (pgx.Tx, error) {
+	return repo.pool.BeginTx(ctx, pgx.TxOptions{})
+}
+
+func (repo *RegistrationRepo) CreateTx(ctx context.Context, tx pgx.Tx, req registration.CreateRegistrationRequest) (reg registration.Registration, err error) {
+	// check duplicate emails for events
+
+	var exists bool
+
+	err = tx.QueryRow(ctx, `SELECT EXISTS(
+			SELECT 1 FROM registrations
+			WHERE event_id = $1 AND email = $2
+		)`, req.EventID, req.Email).Scan(&exists)
+
+	if err != nil {
+		return
+	}
+
+	if exists {
+		err = registration.ErrAlreadyRegistered
+		return
+	}
+
+	// 2) lock event row + check capacity
+	var capacity int
+	var current int
+	err = tx.QueryRow(ctx, `
+		SELECT e.capacity,
+			(SELECT COUNT(*) FROM registrations r WHERE r.event_id = e.id) AS current
+		FROM events e
+		WHERE e.id = $1
+		FOR UPDATE
+	`, req.EventID).Scan(&capacity, &current)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			err = event.ErrNotFound
+		}
+
+		return
+	}
+
+	if current >= capacity {
+		err = registration.ErrEventFull
+		return
+	}
+
+	reg = registration.NewFromCreateRequest(req)
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO registrations (id, event_id, user_id, name, email, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7)
+	`, reg.ID, reg.EventID, reg.UserID, reg.Name, reg.Email, reg.CreatedAt, reg.UpdatedAt)
+
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "registrations_event_email_uniq" {
+			err = registration.ErrAlreadyRegistered
+			return
+		}
+		return
+	}
+
+	return
+}
+
 // implementation of the create method using the idiomatic Go "named return and defer" approach
 func (repo *RegistrationRepo) Create(ctx context.Context, req registration.CreateRegistrationRequest) (reg registration.Registration, err error) {
 	// Enforce capacity and uniqueness into a single transaction
@@ -31,87 +97,21 @@ func (repo *RegistrationRepo) Create(ctx context.Context, req registration.Creat
 	}
 
 	defer func() {
-		// commit or roll back based on final error value.
-
-		if err != nil {
-			_ = tx.Rollback(ctx)
-			return
-		}
-
-		err = tx.Commit(ctx)
+		_ = tx.Rollback(ctx)
 	}()
 
-	var exists bool
-	err = tx.QueryRow(
-		ctx,
-		`SELECT EXISTS(
-         SELECT 1 FROM registrations
-         WHERE event_id = $1 AND email = $2
-     )`,
-		req.EventID,
-		req.Email,
-	).Scan(&exists)
+	reg, err = repo.CreateTx(ctx, tx, req)
+
+	if err != nil {
+		return
+	}
+
+	err = tx.Commit(ctx)
+
 	if err != nil {
 		return
 	}
-	if exists {
-		err = registration.ErrAlreadyRegistered
-		return
-	}
 
-	// 2) Lock event row and check capacity
-
-	var capacity int
-	var current int
-	err = tx.QueryRow(
-		ctx,
-		`
-		SELECT e.capacity, 
-			(SELECT COUNT(*) FROM registrations r WHERE r.event_id = e.id) AS current
-		FROM events e
-		WHERE e.id = $1
-		FOR UPDATE
-		`,
-		req.EventID,
-	).Scan(&capacity, &current)
-
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			err = event.ErrNotFound
-			return
-		}
-
-		return
-	}
-
-	// 2) Enforce capacity
-
-	if current >= capacity {
-		err = registration.ErrEventFull
-		return
-	}
-
-	// Build registration from DTO
-	reg = registration.NewFromCreateRequest(req)
-
-	// Insert registration (still insider the transaction)
-
-	_, err = tx.Exec(ctx,
-		`INSERT INTO registrations (id,event_id,user_id,name,email, created_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6, $7)
-		`,
-		reg.ID, reg.EventID, reg.UserID, reg.Name, reg.Email, reg.CreatedAt, reg.UpdatedAt,
-	)
-
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "registrations_event_email_uniq" {
-			err = registration.ErrAlreadyRegistered
-			return
-
-		}
-		return
-	}
 	// success: registration is set err == nil
 	return
 

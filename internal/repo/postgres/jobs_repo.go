@@ -49,6 +49,26 @@ func (r *JobsRepo) Create(ctx context.Context, req job.CreateRequest) (job.Job, 
 	return j, nil
 }
 
+func (r *JobsRepo) CreateTx(ctx context.Context, tx pgx.Tx, req job.CreateRequest) (job.Job, error) {
+	j := job.New(req)
+
+	_, err := tx.Exec(ctx, `INSERT INTO jobs(
+	 id, type, payload, status, attempts,max_attempts, run_at, locked_at, locked_by, last_error,idempotency_key, created_at, updated_at
+	 ) VALUES (
+		$1,$2,$3,$4,
+		$5,$6,$7,$8,$9,
+		$10,$11,$12,$13
+	 
+	 )
+	 
+	 `, j.ID, j.Type, j.Payload, string(j.Status), j.Attempts, j.MaxAttempts, j.RunAt, j.LockedAt, j.LockedBy, j.LastError, req.IdempotencyKey, j.CreatedAt, j.UpdatedAt)
+
+	if err != nil {
+		return job.Job{}, err
+	}
+	return j, nil
+}
+
 func (r *JobsRepo) MarkFailed(ctx context.Context, id string, errMsg string) error {
 	tag, err := r.pool.Exec(ctx, `
 		UPDATE jobs
@@ -222,64 +242,61 @@ func (r *JobsRepo) GetByIdempotencyKey(ctx context.Context, key string) (job.Job
 	return j, nil
 }
 
-
 // Admin ops endpoints
 
-func (r *JobsRepo) List (ctx context.Context, status *string, limit,offset int)([]job.Job,error) {
-		q := `
+func (r *JobsRepo) List(ctx context.Context, status *string, limit, offset int) ([]job.Job, error) {
+	q := `
 		SELECT id, type, payload, status, attempts,
 		max_attempts, run_at, locked_at, locked_by,
 		last_error, idempotency_key, created_at, updated_at
 		FROM jobs
 		`
 
-		args := [] any{}
-		if status != nil {
-			q += " WHERE status = $1"
-			args = append(args, *status)
-			q += " ORDER BY updated_at DESC"
-			q += " LIMIT $2 OFFSET $3"
-			args = append(args, limit, offset)
-		} else {
-			q += " ORDER BY updated_at DESC LIMIT $1 OFFSET $2"
-			args = append(args, limit,offset)
-		}
+	args := []any{}
+	if status != nil {
+		q += " WHERE status = $1"
+		args = append(args, *status)
+		q += " ORDER BY updated_at DESC"
+		q += " LIMIT $2 OFFSET $3"
+		args = append(args, limit, offset)
+	} else {
+		q += " ORDER BY updated_at DESC LIMIT $1 OFFSET $2"
+		args = append(args, limit, offset)
+	}
 
-		rows, err := r.pool.Query(ctx,q, args...)
+	rows, err := r.pool.Query(ctx, q, args...)
 
-		if err != nil {
-			return nil, err
-		}
+	if err != nil {
+		return nil, err
+	}
 
-		defer rows.Close()
+	defer rows.Close()
 
-		out := make([]job.Job, 0)
+	out := make([]job.Job, 0)
 
-		for rows.Next() {
-			var j job.Job
-			var st string
+	for rows.Next() {
+		var j job.Job
+		var st string
 
-			err = rows.Scan(
+		err = rows.Scan(
 			&j.ID, &j.Type, &j.Payload, &st,
 			&j.Attempts, &j.MaxAttempts,
 			&j.RunAt, &j.LockedAt, &j.LockedBy,
 			&j.LastError, &j.IdempotencyKey,
 			&j.CreatedAt, &j.UpdatedAt,
-			)
+		)
 
-			if err != nil {
-				return nil, err
-			}
-
-			j.Status = job.Status(st)
-
-			out = append(out, j)
+		if err != nil {
+			return nil, err
 		}
 
-		return out, rows.Err()
-}	
+		j.Status = job.Status(st)
 
+		out = append(out, j)
+	}
 
+	return out, rows.Err()
+}
 
 func (r *JobsRepo) GetByID(ctx context.Context, id string) (job.Job, error) {
 	var j job.Job
@@ -312,7 +329,6 @@ func (r *JobsRepo) GetByID(ctx context.Context, id string) (job.Job, error) {
 	return j, nil
 }
 
-
 func (r *JobsRepo) Retry(ctx context.Context, id string) error {
 	tag, err := r.pool.Exec(ctx, `
 		UPDATE jobs
@@ -332,5 +348,3 @@ func (r *JobsRepo) Retry(ctx context.Context, id string) error {
 	}
 	return nil
 }
-
-

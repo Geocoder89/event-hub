@@ -96,7 +96,7 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 	)
 	// Wire up more handler
 	eventsHandler := handlers.NewEventsHandler(eventsRepo)
-	registrationHandler := handlers.NewRegistrationHandler(registrationRepo)
+	registrationHandler := handlers.NewRegistrationHandler(registrationRepo, jobsRepo)
 	jobsHandler := handlers.NewJobsHandler(jobsRepo)
 	authHandler := handlers.NewAuthHandler(usersRepo, usersRepo, jwtManager, refreshTokensRepo, cfg)
 	adminJobsHandler := handlers.NewAdminJobsHandler(jobsRepo)
@@ -132,7 +132,7 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 		authed.POST("/events/:id/register", registerLimiter.RateLimiterMiddleware(middlewares.KeyByUserOrIP), registrationHandler.Register)
 		authed.GET("/events/:id/registrations", registrationHandler.ListForEvent)
 		authed.DELETE("/events/:id/registrations/:registrationId", registrationHandler.Cancel)
-		
+
 	}
 
 	// admin authorized route set up.
@@ -144,7 +144,7 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 		// admin ops endpoints
 		admin.GET("/jobs", adminJobsHandler.List)
 		admin.GET("/jobs/:id", adminJobsHandler.GetByID)
-		admin.POST("/jobs/:id/retry",adminJobsHandler.Retry)
+		admin.POST("/jobs/:id/retry", adminJobsHandler.Retry)
 
 		// admin events crud
 		admin.POST("/events", eventsHandler.CreateEvent)

@@ -67,29 +67,29 @@ func (h *AdminJobsHandler) List(ctx *gin.Context) {
 		statusPointer = &s
 	}
 
-	 cctx, cancel := config.WithTimeout(2 * time.Second)
+	cctx, cancel := config.WithTimeout(2 * time.Second)
 
-	 defer cancel()
+	defer cancel()
 
-	 items, err := h.repo.List(cctx, statusPointer, limit, offset)
+	items, err := h.repo.List(cctx, statusPointer, limit, offset)
 
-	 if err != nil {
+	if err != nil {
 		fmt.Println(err)
-		RespondInternal(ctx,"Could not list jobs")
+		RespondInternal(ctx, "Could not list jobs")
 		return
-	 }
+	}
 
-	 ctx.JSON(http.StatusOK, gin.H {
-		"limit": limit,
+	ctx.JSON(http.StatusOK, gin.H{
+		"limit":  limit,
 		"offset": offset,
-		"count": len(items),
-		"items": items,
-	 })
+		"count":  len(items),
+		"items":  items,
+	})
 }
 
 // Get /admin/jobs/:id
 
-func (h *AdminJobsHandler) GetByID(ctx  *gin.Context) {
+func (h *AdminJobsHandler) GetByID(ctx *gin.Context) {
 	id := ctx.Param("id")
 
 	if !utils.IsUUID(id) {
@@ -100,19 +100,19 @@ func (h *AdminJobsHandler) GetByID(ctx  *gin.Context) {
 	cctx, cancel := config.WithTimeout(2 * time.Second)
 	defer cancel()
 
-	j,err := h.repo.GetByID(cctx,id)
+	j, err := h.repo.GetByID(cctx, id)
 
 	if err != nil {
 		if errors.Is(err, job.ErrJobNotFound) {
-			RespondNotFound(ctx,"Job not found")
+			RespondNotFound(ctx, "Job not found")
 			return
 		}
 
-		RespondInternal(ctx,"Could not fetch job")
+		RespondInternal(ctx, "Could not fetch job")
 		return
 	}
 
-	ctx.JSON(http.StatusOK,j)
+	ctx.JSON(http.StatusOK, j)
 }
 
 // POST /admin/jobs/:id/retry

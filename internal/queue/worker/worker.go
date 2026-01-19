@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/geocoder89/eventhub/internal/domain/job"
+	"github.com/geocoder89/eventhub/internal/jobs"
 	"github.com/geocoder89/eventhub/internal/observability"
 )
 
@@ -222,6 +223,21 @@ func (w *Worker) execute(ctx context.Context, j job.Job) error {
 		}
 
 		// future: side effects like notifications/webhooks
+		return nil
+
+	case jobs.TypeRegistrationConfirmation:
+		var p jobs.RegistrationConfirmationPayload
+		if err := json.Unmarshal(j.Payload, &p); err != nil {
+			return fmt.Errorf("invalid payload: %w", err)
+		}
+
+		// Day 43: stub “send confirmation” side effect (log-only)
+		log.Printf(
+			"confirmation.send registration=%s event=%s email=%s name=%s",
+			p.RegistrationID, p.EventID, p.Email, p.Name,
+		)
+
+		// Day 45: replace this log with a notifier/email provider.
 		return nil
 
 	default:

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -24,7 +25,11 @@ func setupPipelineTestRouter(t *testing.T) (*gin.Engine, *pgxpool.Pool, config.C
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
-	dsn := "postgres://eventhub:eventhub@127.0.0.1:5433/eventhub?sslmode=disable"
+	dsn := os.Getenv("TEST_DB_DSN")
+	if dsn == "" {
+		dsn = "postgres://eventhub:eventhub@127.0.0.1:5433/eventhub?sslmode=disable"
+	}
+
 	pool, err := pgxpool.New(context.Background(), dsn)
 	if err != nil {
 		t.Fatalf("pg pool: %v", err)

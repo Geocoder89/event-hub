@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/geocoder89/eventhub/internal/config"
+	"github.com/geocoder89/eventhub/internal/notifications"
 	"github.com/geocoder89/eventhub/internal/queue/worker"
 	"github.com/geocoder89/eventhub/internal/repo/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -39,13 +40,23 @@ func main() {
 
 	host, _ := os.Hostname()
 	workerID := host + "-" + strconv.Itoa(os.Getpid())
+	
+	baseNotifier := notifications.NewLogNotifier()
+
+	notifier := notifications.NewProtectedNotifier(baseNotifier,notifications.ProtectedNotifierConfig{
+		Timeout: 2 * time.Second,
+		FailureThreshold: 3,
+		Cooldown: 15 * time.Second,
+		HalfOpenMaxCalls: 1,
+	})
+	deliveriesRepo := postgres.NewNotificationsDeliveriesRepo(pool)
 
 	w := worker.New(worker.Config{
-		PollInterval:  100 * time.Millisecond,
+		PollInterval:  2 * time.Second,
 		WorkerID:      workerID,
-		Concurrency:   4,
+		Concurrency:   1,
 		ShutdownGrace: 10 * time.Second,
-	}, jobsRepo, eventsRepo)
+	}, jobsRepo, eventsRepo,notifier,deliveriesRepo)
 
 	log.Println("worker has started")
 

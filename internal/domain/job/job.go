@@ -32,8 +32,12 @@ type Job struct {
 	LastError   *string         `json:"lastError,omitempty"`
 	// new Idempotency key
 	IdempotencyKey *string   `json:"idempotencyKey,omitempty"`
+	Priority       int       `json:"priority,omitempty"` // added this for priority in a job
 	CreatedAt      time.Time `json:"createdAt"`
 	UpdatedAt      time.Time `json:"updatedAt"`
+
+	// actor context
+	UserID  *string `json:"userId"`
 }
 
 type CreateRequest struct {
@@ -42,6 +46,8 @@ type CreateRequest struct {
 	RunAt          time.Time
 	MaxAttempts    int
 	IdempotencyKey *string
+	Priority       int // added for priority in a job
+	UserID        *string
 }
 
 func New(req CreateRequest) Job {
@@ -66,8 +72,11 @@ func New(req CreateRequest) Job {
 		Status:      StatusPending,
 		Attempts:    0,
 		MaxAttempts: maxA,
+		IdempotencyKey: req.IdempotencyKey,
+		Priority: req.Priority,
 		RunAt:       runAt,
 		CreatedAt:   now,
 		UpdatedAt:   now,
+		UserID: req.UserID,
 	}
 }

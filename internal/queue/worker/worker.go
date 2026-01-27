@@ -6,12 +6,17 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"sync"
 	"time"
 
+	"github.com/geocoder89/eventhub/internal/actorctx"
 	"github.com/geocoder89/eventhub/internal/domain/job"
+	notificationsdelivery "github.com/geocoder89/eventhub/internal/domain/notifications_delivery"
 	"github.com/geocoder89/eventhub/internal/jobs"
+	"github.com/geocoder89/eventhub/internal/notifications"
 	"github.com/geocoder89/eventhub/internal/observability"
+	"github.com/geocoder89/eventhub/internal/repo/postgres"
 )
 
 type publishPayload struct {
@@ -21,6 +26,7 @@ type publishPayload struct {
 type JobsRepository interface {
 	ClaimNext(ctx context.Context, workerID string) (job.Job, error)
 	// FetchNextPending(ctx context.Context) (job.Job, error)
+	RequeueStaleProcessing(ctx context.Context, lockTTL time.Duration) (int64, error)
 	Reschedule(ctx context.Context, id string, runAt time.Time, errMsg string) error
 	MarkFailed(ctx context.Context, id string, errMsg string) error
 	MarkDone(ctx context.Context, id string) error
@@ -35,16 +41,29 @@ type Config struct {
 	WorkerID      string
 	Concurrency   int // concurrency control
 	ShutdownGrace time.Duration
+	LockTTL       time.Duration
 }
 
 type Worker struct {
-	cfg     Config
-	repo    JobsRepository
-	events  EventsRepository
-	metrics *observability.JobMetrics
+	cfg        Config
+	repo       JobsRepository
+	events     EventsRepository
+	metrics    *observability.JobMetrics
+	notifier   notifications.Notifier
+	deliveries *postgres.NotificationsDeliveriesRepo
+	readyMu    sync.RWMutex
+	ready      bool
 }
 
-func New(cfg Config, repo JobsRepository, events EventsRepository) *Worker {
+func optional(v *string) string {
+	if v == nil {
+		return "null"
+	}
+	return *v
+}
+
+func New(cfg Config, repo JobsRepository, events EventsRepository, notifier notifications.Notifier, deliveries *postgres.NotificationsDeliveriesRepo,
+) *Worker {
 	if cfg.Concurrency <= 0 {
 		cfg.Concurrency = 4
 	}
@@ -53,10 +72,13 @@ func New(cfg Config, repo JobsRepository, events EventsRepository) *Worker {
 		cfg.ShutdownGrace = 10 * time.Second
 	}
 	return &Worker{
-		cfg:     cfg,
-		repo:    repo,
-		events:  events,
-		metrics: observability.NewJobMetrics(),
+		cfg:        cfg,
+		repo:       repo,
+		events:     events,
+		metrics:    observability.NewJobMetrics(),
+		notifier:   notifier,
+		deliveries: deliveries,
+		ready:      true,
 	}
 }
 
@@ -80,14 +102,67 @@ func (w *Worker) logMetricsLoop(ctx context.Context, every time.Duration) {
 	}
 }
 
+func (w *Worker) requeueLoop(ctx context.Context) {
+	t := time.NewTicker(10 * time.Second)
+	defer t.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case <-t.C:
+			// short timeout for housekeeping
+			hctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			n, err := w.repo.RequeueStaleProcessing(hctx, w.cfg.LockTTL)
+
+			cancel()
+
+			if err != nil {
+				log.Printf("worker.requeue_stale error=%v", err)
+				continue
+			}
+			if n > 0 {
+				log.Printf("worker.requeue_stale count=%d", n)
+			}
+		}
+
+	}
+}
+
 func (w *Worker) Run(ctx context.Context) error {
-	// job channel is the work queue inside the worker process
+	// health server
+	srv := &http.Server{Addr: ":8081", Handler: w.HealthHandler()}
+
+	healthDone := make(chan struct{})
+
+	go func() {
+		log.Println("worker health server started on :8081")
+		_ = srv.ListenAndServe()
+		close(healthDone)
+	}()
+
+	// On shutdown: flip readiness -> keep alive briefly -> then shutdown server
+	go func() {
+		<-ctx.Done()
+
+		w.readyMu.Lock()
+		w.ready = false
+		w.readyMu.Unlock()
+
+		time.Sleep(5 * time.Second) // 503 observation window
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	}()
+
+	// Worker loops
 	jobsCh := make(chan job.Job)
 
-	// start a metrics goroutine
 	go w.logMetricsLoop(ctx, 30*time.Second)
+	go w.requeueLoop(ctx)
 
-	// Start N worker goroutines
 	var wg sync.WaitGroup
 	for i := 0; i < w.cfg.Concurrency; i++ {
 		wg.Add(1)
@@ -97,7 +172,6 @@ func (w *Worker) Run(ctx context.Context) error {
 		}(i + 1)
 	}
 
-	// Producer loop: claim jobs and feed the pool
 	ticker := time.NewTicker(w.cfg.PollInterval)
 	defer ticker.Stop()
 
@@ -134,10 +208,8 @@ producerLoop:
 		}
 	}
 
-	// Stop accepting new jobs, let workers drain
 	close(jobsCh)
 
-	// Wait for in-flight jobs with grace timeout
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()
@@ -151,21 +223,40 @@ producerLoop:
 		log.Printf("worker: shutdown grace (%s) exceeded; exiting", w.cfg.ShutdownGrace)
 	}
 
+	// IMPORTANT: keep process alive until health server finishes
+	select {
+	case <-healthDone:
+	case <-time.After(7 * time.Second): // 5s window + 2s shutdown buffer
+	}
+
 	return nil
 }
+
 
 func (w *Worker) runWorker(ctx context.Context, workerNum int, jobsChan <-chan job.Job) {
 	for j := range jobsChan {
 		start := time.Now()
 
+		uid := ""
+
+		if j.UserID != nil {
+			uid = *j.UserID
+		}
+
 		log.Printf(
-			"job.start worker=%d job=%s type=%s attempts=%d/%d",
-			workerNum, j.ID, j.Type, j.Attempts, j.MaxAttempts,
+			"job.start worker_num=%d job_id=%s job_type=%s user_id=%s attempts=%d/%d",
+			workerNum, j.ID, j.Type, uid, j.Attempts, j.MaxAttempts,
 		)
 
+		execCtx := ctx
+
+		if j.UserID != nil && *j.UserID != "" {
+			execCtx = actorctx.WithUserID(execCtx, *j.UserID)
+		}
+
 		// Execute
-		if err := w.execute(ctx, j); err != nil {
-			w.handleFailure(ctx, j, err)
+		if err := w.execute(execCtx, j); err != nil {
+			w.handleFailure(execCtx, j, err)
 			d := time.Since(start)
 			w.metrics.ObserveDuration(d)
 			w.metrics.IncFailed()
@@ -177,7 +268,7 @@ func (w *Worker) runWorker(ctx context.Context, workerNum int, jobsChan <-chan j
 		}
 
 		// Mark done
-		if err := w.repo.MarkDone(ctx, j.ID); err != nil {
+		if err := w.repo.MarkDone(execCtx, j.ID); err != nil {
 			d := time.Since(start)
 			w.metrics.ObserveDuration(d)
 			w.metrics.IncFailed()
@@ -187,7 +278,7 @@ func (w *Worker) runWorker(ctx context.Context, workerNum int, jobsChan <-chan j
 				workerNum, j.ID, j.Type, d, err,
 			)
 
-			_ = w.repo.MarkFailed(ctx, j.ID, "mark_done_failed: "+err.Error())
+			_ = w.repo.MarkFailed(execCtx, j.ID, "mark_done_failed: "+err.Error())
 			continue
 
 		}
@@ -196,10 +287,16 @@ func (w *Worker) runWorker(ctx context.Context, workerNum int, jobsChan <-chan j
 		w.metrics.ObserveDuration(d)
 		w.metrics.IncDone()
 
+		lockedBy := ""
+		if j.LockedBy != nil {
+			lockedBy = *j.LockedBy
+		}
+
 		log.Printf(
-			"job.done worker=%d job=%s type=%s dur=%s",
-			workerNum, j.ID, j.Type, d,
+			"job.done worker_num=%d locked_by=%s job_id=%s job_type=%s user_id=%s duration_ms=%d",
+			workerNum, lockedBy, j.ID, j.Type, optional(j.UserID), time.Since(start).Milliseconds(),
 		)
+
 	}
 }
 
@@ -231,14 +328,66 @@ func (w *Worker) execute(ctx context.Context, j job.Job) error {
 			return fmt.Errorf("invalid payload: %w", err)
 		}
 
-		// Day 43: stub “send confirmation” side effect (log-only)
-		log.Printf(
-			"confirmation.send registration=%s event=%s email=%s name=%s",
-			p.RegistrationID, p.EventID, p.Email, p.Name,
-		)
+		if w.notifier == nil {
+			return fmt.Errorf("notifier not configured")
+		}
 
-		// Day 45: replace this log with a notifier/email provider.
+		if w.deliveries == nil {
+			return fmt.Errorf("deliveries repo not configured")
+		}
+
+		// Send-once gate
+
+		err := w.deliveries.TryStartRegistration(ctx, j.ID, p.RegistrationID, p.Email)
+
+		if err != nil {
+			// Already sent == success (idempotent no-op)
+
+			if errors.Is(err, notificationsdelivery.ErrAlreadySent) {
+				return nil
+			}
+
+			// Another attempt is sending == retry later
+
+			if errors.Is(err, notificationsdelivery.ErrInProgress) {
+				return fmt.Errorf("confirmation send in progress")
+			}
+
+			return err
+		}
+
+		// Day 45: replaced initial log from day 43 with a notifier/email provider.
+		err = w.notifier.SendRegistrationConfirmation(ctx, notifications.SendRegistrationConfirmationInput{
+			Email:          p.Email,
+			Name:           p.Name,
+			EventID:        p.EventID,
+			RegistrationID: p.RegistrationID,
+		})
+
+		if err != nil {
+			// ALWAYS mark failed on any send error
+			_ = w.deliveries.MarkRegistrationConfirmationFailed(
+				ctx,
+				p.RegistrationID,
+				err.Error(),
+			)
+
+			if errors.Is(err, notifications.ErrCircuitOpen) {
+				return fmt.Errorf("notifier fail-fast: %w", err)
+			}
+
+			return err
+		}
+		// 3) Mark sent
+		if err := w.deliveries.MarkRegistrationConfirmationSent(ctx, p.RegistrationID, nil); err != nil {
+			log.Printf("deliveries: mark sent failed reg=%s job=%s err=%v", p.RegistrationID, j.ID, err)
+		}
 		return nil
+
+	case "test.crash":
+		time.Sleep(60 * time.Second)
+
+		return fmt.Errorf("unknown job type: %s", j.Type)
 
 	default:
 		time.Sleep(750 * time.Millisecond)

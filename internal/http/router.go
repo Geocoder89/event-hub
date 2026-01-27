@@ -3,7 +3,6 @@ package http
 import (
 	"context"
 	"log/slog"
-	"os"
 	"time"
 
 	"github.com/geocoder89/eventhub/internal/auth"
@@ -19,9 +18,7 @@ import (
 )
 
 func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
-	cfgEnv := os.Getenv("APP_ENV")
-
-	if cfgEnv != "dev" {
+	if cfg.Env != "dev" {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
@@ -145,6 +142,7 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 		admin.GET("/jobs", adminJobsHandler.List)
 		admin.GET("/jobs/:id", adminJobsHandler.GetByID)
 		admin.POST("/jobs/:id/retry", adminJobsHandler.Retry)
+		admin.POST("/jobs/reprocess-dead", adminJobsHandler.ReprocessDead)
 
 		// admin events crud
 		admin.POST("/events", eventsHandler.CreateEvent)

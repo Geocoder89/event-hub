@@ -14,6 +14,7 @@ import (
 	"github.com/geocoder89/eventhub/internal/auth"
 	"github.com/geocoder89/eventhub/internal/config"
 	apphttp "github.com/geocoder89/eventhub/internal/http"
+	"github.com/geocoder89/eventhub/internal/notifications"
 	"github.com/geocoder89/eventhub/internal/queue/worker"
 	"github.com/geocoder89/eventhub/internal/repo/postgres"
 	"github.com/gin-gonic/gin"
@@ -51,15 +52,15 @@ func setupPipelineTestRouter(t *testing.T) (*gin.Engine, *pgxpool.Pool, config.C
 
 }
 
-func resetPipelineDB(t *testing.T, pool *pgxpool.Pool) {
-	t.Helper()
-	_, err := pool.Exec(context.Background(), `
-		TRUNCATE refresh_tokens, registrations, jobs, events, users RESTART IDENTITY CASCADE
-	`)
-	if err != nil {
-		t.Fatalf("truncate: %v", err)
-	}
-}
+// func resetPipelineDB(t *testing.T, pool *pgxpool.Pool) {
+// 	t.Helper()
+// 	_, err := pool.Exec(context.Background(), `
+// 		TRUNCATE refresh_tokens, registrations, jobs, events, users RESTART IDENTITY CASCADE
+// 	`)
+// 	if err != nil {
+// 		t.Fatalf("truncate: %v", err)
+// 	}
+// }
 
 func TestPublishPipeline_EndToEnd(t *testing.T) {
 	router, pool, cfg := setupPipelineTestRouter(t)
@@ -93,13 +94,15 @@ func TestPublishPipeline_EndToEnd(t *testing.T) {
 	// Process job with worker step
 	jobsRepo := postgres.NewJobsRepo(pool)
 	eventsRepo := postgres.NewEventsRepo(pool)
+	deliveriesRepo := postgres.NewNotificationsDeliveriesRepo(pool)
+	notifier := notifications.NewLogNotifier()
 
 	wk := worker.New(worker.Config{
 		PollInterval:  10 * time.Millisecond,
 		WorkerID:      "test-worker",
 		Concurrency:   1,
 		ShutdownGrace: 1 * time.Second,
-	}, jobsRepo, eventsRepo)
+	}, jobsRepo, eventsRepo,notifier,deliveriesRepo)
 
 	processed, err := wk.ProcessOne(context.Background())
 

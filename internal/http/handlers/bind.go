@@ -9,6 +9,7 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
+
 type FieldError struct {
 	Field string `json:"field"`
 	Rule  string `json:"rule"`

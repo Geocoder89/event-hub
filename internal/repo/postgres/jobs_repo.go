@@ -11,6 +11,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+var ErrJobNotFailed = errors.New("job is not failed")
+
 type JobsRepo struct {
 	pool *pgxpool.Pool
 }
@@ -32,15 +34,15 @@ func (r *JobsRepo) Create(ctx context.Context, req job.CreateRequest) (job.Job, 
 	j := job.New(req)
 
 	_, err := r.pool.Exec(ctx, `INSERT INTO jobs(
-	 id, type, payload, status, attempts,max_attempts, run_at, locked_at, locked_by, last_error,idempotency_key, created_at, updated_at
+	 id, type, payload, status, attempts,max_attempts, run_at, locked_at, locked_by, last_error,idempotency_key,priority,user_id, created_at, updated_at
 	 ) VALUES (
 		$1,$2,$3,$4,
 		$5,$6,$7,$8,$9,
-		$10,$11,$12,$13
+		$10,$11,$12,$13,$14,$15
 	 
 	 )
 	 
-	 `, j.ID, j.Type, j.Payload, string(j.Status), j.Attempts, j.MaxAttempts, j.RunAt, j.LockedAt, j.LockedBy, j.LastError, req.IdempotencyKey, j.CreatedAt, j.UpdatedAt)
+	 `, j.ID, j.Type, j.Payload, string(j.Status), j.Attempts, j.MaxAttempts, j.RunAt, j.LockedAt, j.LockedBy, j.LastError, req.IdempotencyKey,j.Priority,j.UserID, j.CreatedAt, j.UpdatedAt)
 
 	if err != nil {
 		return job.Job{}, err
@@ -53,15 +55,15 @@ func (r *JobsRepo) CreateTx(ctx context.Context, tx pgx.Tx, req job.CreateReques
 	j := job.New(req)
 
 	_, err := tx.Exec(ctx, `INSERT INTO jobs(
-	 id, type, payload, status, attempts,max_attempts, run_at, locked_at, locked_by, last_error,idempotency_key, created_at, updated_at
+	 id, type, payload, status, attempts,max_attempts, run_at, locked_at, locked_by, last_error,idempotency_key,priority,user_id, created_at, updated_at
 	 ) VALUES (
 		$1,$2,$3,$4,
 		$5,$6,$7,$8,$9,
-		$10,$11,$12,$13
+		$10,$11,$12,$13,$14,$15
 	 
 	 )
 	 
-	 `, j.ID, j.Type, j.Payload, string(j.Status), j.Attempts, j.MaxAttempts, j.RunAt, j.LockedAt, j.LockedBy, j.LastError, req.IdempotencyKey, j.CreatedAt, j.UpdatedAt)
+	 `, j.ID, j.Type, j.Payload, string(j.Status), j.Attempts, j.MaxAttempts, j.RunAt, j.LockedAt, j.LockedBy, j.LastError, req.IdempotencyKey,j.Priority,j.UserID, j.CreatedAt, j.UpdatedAt)
 
 	if err != nil {
 		return job.Job{}, err
@@ -146,7 +148,7 @@ func (r *JobsRepo) ClaimNext(ctx context.Context, workerID string) (job.Job, err
 			WHERE status = 'pending'
 			  AND run_at <= NOW()
 			  AND attempts < max_attempts
-			ORDER BY run_at ASC, created_at ASC
+			ORDER BY priority DESC, run_at ASC, created_at ASC
 			FOR UPDATE SKIP LOCKED
 			LIMIT 1
 		)
@@ -159,12 +161,12 @@ func (r *JobsRepo) ClaimNext(ctx context.Context, workerID string) (job.Job, err
 		RETURNING id, type, payload, status,
 		          attempts, max_attempts,
 		          run_at, locked_at, locked_by,
-		          last_error,idempotency_key, created_at, updated_at
+		          last_error,idempotency_key,priority,user_id, created_at, updated_at
 	`, workerID).Scan(
 		&j.ID, &j.Type, &j.Payload, &status,
 		&j.Attempts, &j.MaxAttempts,
 		&j.RunAt, &j.LockedAt, &j.LockedBy,
-		&j.LastError, &j.IdempotencyKey, &j.CreatedAt, &j.UpdatedAt,
+		&j.LastError, &j.IdempotencyKey,&j.Priority,&j.UserID, &j.CreatedAt, &j.UpdatedAt,
 	)
 
 	if err != nil {
@@ -186,7 +188,7 @@ func (r *JobsRepo) FetchNextPending(ctx context.Context) (job.Job, error) {
 		SELECT id, type, payload, status,
 		       attempts, max_attempts,
 		       run_at, locked_at, locked_by,
-		       last_error,idempotency_key, created_at, updated_at
+		       last_error,idempotency_key,priority,user_id, created_at, updated_at
 		FROM jobs
 		WHERE status = 'pending'
 		  AND run_at <= NOW()
@@ -197,7 +199,7 @@ func (r *JobsRepo) FetchNextPending(ctx context.Context) (job.Job, error) {
 		&j.ID, &j.Type, &j.Payload, &status,
 		&j.Attempts, &j.MaxAttempts,
 		&j.RunAt, &j.LockedAt, &j.LockedBy,
-		&j.LastError, &j.IdempotencyKey, &j.CreatedAt, &j.UpdatedAt,
+		&j.LastError, &j.IdempotencyKey,&j.Priority, &j.UserID, &j.CreatedAt, &j.UpdatedAt,
 	)
 
 	if err != nil {
@@ -219,7 +221,7 @@ func (r *JobsRepo) GetByIdempotencyKey(ctx context.Context, key string) (job.Job
 		SELECT id, type, payload, status,
 		       attempts, max_attempts,
 		       run_at, locked_at, locked_by,
-		       last_error, idempotency_key,
+		       last_error, idempotency_key,priority,user_id,
 		       created_at, updated_at
 		FROM jobs
 		WHERE idempotency_key = $1
@@ -227,7 +229,7 @@ func (r *JobsRepo) GetByIdempotencyKey(ctx context.Context, key string) (job.Job
 		&j.ID, &j.Type, &j.Payload, &status,
 		&j.Attempts, &j.MaxAttempts,
 		&j.RunAt, &j.LockedAt, &j.LockedBy,
-		&j.LastError, &j.IdempotencyKey,
+		&j.LastError, &j.IdempotencyKey,&j.Priority,&j.UserID,
 		&j.CreatedAt, &j.UpdatedAt,
 	)
 
@@ -242,13 +244,37 @@ func (r *JobsRepo) GetByIdempotencyKey(ctx context.Context, key string) (job.Job
 	return j, nil
 }
 
+// Requeue a stale processing job i.e lockTTL is greater than the time now i.e it is stale
+
+func (r *JobsRepo) RequeueStaleProcessing(ctx context.Context, lockTTL time.Duration) (int64, error) {
+	secs := int64(lockTTL.Seconds())
+	if secs <= 0 {
+		secs = 30
+	}
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE jobs
+		SET status = 'pending',
+		    locked_at = NULL,
+		    locked_by = NULL,
+		    updated_at = NOW()
+		WHERE status = 'processing'
+		  AND locked_at IS NOT NULL
+		  AND locked_at < NOW() - ($1 * INTERVAL '1 second')
+	`, secs)
+
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 // Admin ops endpoints
 
 func (r *JobsRepo) List(ctx context.Context, status *string, limit, offset int) ([]job.Job, error) {
 	q := `
 		SELECT id, type, payload, status, attempts,
 		max_attempts, run_at, locked_at, locked_by,
-		last_error, idempotency_key, created_at, updated_at
+		last_error, idempotency_key, priority,user_id,created_at, updated_at
 		FROM jobs
 		`
 
@@ -282,7 +308,7 @@ func (r *JobsRepo) List(ctx context.Context, status *string, limit, offset int) 
 			&j.ID, &j.Type, &j.Payload, &st,
 			&j.Attempts, &j.MaxAttempts,
 			&j.RunAt, &j.LockedAt, &j.LockedBy,
-			&j.LastError, &j.IdempotencyKey,
+			&j.LastError, &j.IdempotencyKey,&j.Priority,&j.UserID,
 			&j.CreatedAt, &j.UpdatedAt,
 		)
 
@@ -306,7 +332,7 @@ func (r *JobsRepo) GetByID(ctx context.Context, id string) (job.Job, error) {
 		SELECT id, type, payload, status,
 		       attempts, max_attempts,
 		       run_at, locked_at, locked_by,
-		       last_error, idempotency_key,
+		       last_error, idempotency_key,priority,user_id,
 		       created_at, updated_at
 		FROM jobs
 		WHERE id = $1
@@ -314,7 +340,7 @@ func (r *JobsRepo) GetByID(ctx context.Context, id string) (job.Job, error) {
 		&j.ID, &j.Type, &j.Payload, &status,
 		&j.Attempts, &j.MaxAttempts,
 		&j.RunAt, &j.LockedAt, &j.LockedBy,
-		&j.LastError, &j.IdempotencyKey,
+		&j.LastError, &j.IdempotencyKey,&j.Priority,&j.UserID,
 		&j.CreatedAt, &j.UpdatedAt,
 	)
 
@@ -330,7 +356,24 @@ func (r *JobsRepo) GetByID(ctx context.Context, id string) (job.Job, error) {
 }
 
 func (r *JobsRepo) Retry(ctx context.Context, id string) error {
-	tag, err := r.pool.Exec(ctx, `
+	// check job exists + status
+	var status string
+
+	err := r.pool.QueryRow(ctx, `SELECT status FROM jobs WHERE id = $1`, id).Scan(&status)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return job.ErrJobNotFound
+		}
+		return err
+	}
+
+	if status != "failed" {
+		return ErrJobNotFailed
+	}
+
+	// 2) requeue
+	_, err = r.pool.Exec(ctx, `
 		UPDATE jobs
 		SET status = 'pending',
 		    run_at = NOW(),
@@ -338,13 +381,49 @@ func (r *JobsRepo) Retry(ctx context.Context, id string) error {
 		    locked_by = NULL,
 		    last_error = NULL,
 		    updated_at = NOW()
-		WHERE id = $1 AND status = 'failed'
+		WHERE id = $1
 	`, id)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return job.ErrJobNotFound
-	}
-	return nil
+
+	return err
 }
+
+// POST /admin/jobs/reprocess-dead?limit=50
+func (r *JobsRepo) RetryManyFailed(ctx context.Context, limit int) (int64, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	if limit > 500 {
+		limit = 500
+
+	}
+
+	tag, err := r.pool.Exec(ctx,
+		`
+		WITH picked AS (
+			SELECT id
+			FROM jobs
+			WHERE status = 'failed'
+			ORDER BY updated_at DESC
+			LIMIT $1
+		)
+		UPDATE jobs
+		SET status = 'pending',
+		    run_at = NOW(),
+		    locked_at = NULL,
+		    locked_by = NULL,
+		    last_error = NULL,
+		    updated_at = NOW()
+		WHERE id IN (SELECT id FROM picked)
+		`, limit)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return tag.RowsAffected(), nil
+
+}
+
+
+

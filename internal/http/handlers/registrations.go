@@ -114,12 +114,17 @@ func (h *RegistrationHandler) Register(ctx *gin.Context) {
 	// idempotency key
 	key := "registration:confirm:" + reg.ID
 
+
+	//capture userID as a variable so we can take its address
+	uid := userID
+
 	_, err = h.jobsRepo.CreateTx(cctx, tx, job.CreateRequest{
 		Type:           jobs.TypeRegistrationConfirmation,
 		Payload:        raw,
 		RunAt:          time.Now().UTC(),
 		MaxAttempts:    10,
 		IdempotencyKey: &key,
+		UserID: &uid,
 	})
 	if err != nil {
 		// if duplicate idempotency key inside same tx, treat as OK (rare, but safe)
@@ -185,6 +190,7 @@ func (h *RegistrationHandler) Cancel(ctx *gin.Context) {
 
 	// attach userID into request
 	userID, ok := middlewares.UserIDFromContext(ctx)
+	
 
 	if !ok || userID == "" {
 		RespondUnAuthorized(ctx, "unauthorized", "Missing identity")

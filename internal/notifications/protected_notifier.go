@@ -10,24 +10,23 @@ import (
 var ErrCircuitOpen = errors.New("circuit breaker open")
 
 type ProtectedNotifierConfig struct {
-	Timeout           time.Duration // hard timeout per send
-	FailureThreshold  int           // consecutive failures to open circuit
-	Cooldown          time.Duration // how long to stay open before half-open
-	HalfOpenMaxCalls  int           // allow N trial calls in half-open
+	Timeout          time.Duration // hard timeout per send
+	FailureThreshold int           // consecutive failures to open circuit
+	Cooldown         time.Duration // how long to stay open before half-open
+	HalfOpenMaxCalls int           // allow N trial calls in half-open
 }
 
 type ProtectedNotifier struct {
 	inner Notifier
-	cfg ProtectedNotifierConfig
-	mu sync.Mutex
+	cfg   ProtectedNotifierConfig
+	mu    sync.Mutex
 
 	state string // "closed" | "open" | "half_open"
 
 	consecutiveFailures int
-	openedAt time.Time
-	halfOpenInFlight int
+	openedAt            time.Time
+	halfOpenInFlight    int
 }
-
 
 func NewProtectedNotifier(inner Notifier, cfg ProtectedNotifierConfig) *ProtectedNotifier {
 	//defaults
@@ -51,7 +50,7 @@ func NewProtectedNotifier(inner Notifier, cfg ProtectedNotifierConfig) *Protecte
 	}
 }
 
-func (n *ProtectedNotifier) SendRegistrationConfirmation (ctx context.Context,input SendRegistrationConfirmationInput) error {
+func (n *ProtectedNotifier) SendRegistrationConfirmation(ctx context.Context, input SendRegistrationConfirmationInput) error {
 	// fail-fast gate
 
 	if !n.allowRequest() {
@@ -59,7 +58,7 @@ func (n *ProtectedNotifier) SendRegistrationConfirmation (ctx context.Context,in
 	}
 	// enforce timeout
 
-	sendCtx,cancel := context.WithTimeout(ctx, n.cfg.Timeout)
+	sendCtx, cancel := context.WithTimeout(ctx, n.cfg.Timeout)
 	defer cancel()
 
 	err := n.inner.SendRegistrationConfirmation(sendCtx, input)
@@ -97,9 +96,7 @@ func (n *ProtectedNotifier) allowRequest() bool {
 		return true
 	}
 
-
 }
-
 
 func (n *ProtectedNotifier) afterRequest(err error) {
 	n.mu.Lock()

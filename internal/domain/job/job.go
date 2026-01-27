@@ -37,7 +37,7 @@ type Job struct {
 	UpdatedAt      time.Time `json:"updatedAt"`
 
 	// actor context
-	UserID  *string `json:"userId"`
+	UserID *string `json:"userId"`
 }
 
 type CreateRequest struct {
@@ -47,7 +47,7 @@ type CreateRequest struct {
 	MaxAttempts    int
 	IdempotencyKey *string
 	Priority       int // added for priority in a job
-	UserID        *string
+	UserID         *string
 }
 
 func New(req CreateRequest) Job {
@@ -66,17 +66,17 @@ func New(req CreateRequest) Job {
 	}
 
 	return Job{
-		ID:          uuid.NewString(),
-		Type:        req.Type,
-		Payload:     req.Payload,
-		Status:      StatusPending,
-		Attempts:    0,
-		MaxAttempts: maxA,
+		ID:             uuid.NewString(),
+		Type:           req.Type,
+		Payload:        req.Payload,
+		Status:         StatusPending,
+		Attempts:       0,
+		MaxAttempts:    maxA,
 		IdempotencyKey: req.IdempotencyKey,
-		Priority: req.Priority,
-		RunAt:       runAt,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-		UserID: req.UserID,
+		Priority:       req.Priority,
+		RunAt:          runAt,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		UserID:         req.UserID,
 	}
 }

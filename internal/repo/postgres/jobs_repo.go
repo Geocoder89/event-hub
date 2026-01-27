@@ -42,7 +42,7 @@ func (r *JobsRepo) Create(ctx context.Context, req job.CreateRequest) (job.Job, 
 	 
 	 )
 	 
-	 `, j.ID, j.Type, j.Payload, string(j.Status), j.Attempts, j.MaxAttempts, j.RunAt, j.LockedAt, j.LockedBy, j.LastError, req.IdempotencyKey,j.Priority,j.UserID, j.CreatedAt, j.UpdatedAt)
+	 `, j.ID, j.Type, j.Payload, string(j.Status), j.Attempts, j.MaxAttempts, j.RunAt, j.LockedAt, j.LockedBy, j.LastError, req.IdempotencyKey, j.Priority, j.UserID, j.CreatedAt, j.UpdatedAt)
 
 	if err != nil {
 		return job.Job{}, err
@@ -63,7 +63,7 @@ func (r *JobsRepo) CreateTx(ctx context.Context, tx pgx.Tx, req job.CreateReques
 	 
 	 )
 	 
-	 `, j.ID, j.Type, j.Payload, string(j.Status), j.Attempts, j.MaxAttempts, j.RunAt, j.LockedAt, j.LockedBy, j.LastError, req.IdempotencyKey,j.Priority,j.UserID, j.CreatedAt, j.UpdatedAt)
+	 `, j.ID, j.Type, j.Payload, string(j.Status), j.Attempts, j.MaxAttempts, j.RunAt, j.LockedAt, j.LockedBy, j.LastError, req.IdempotencyKey, j.Priority, j.UserID, j.CreatedAt, j.UpdatedAt)
 
 	if err != nil {
 		return job.Job{}, err
@@ -166,7 +166,7 @@ func (r *JobsRepo) ClaimNext(ctx context.Context, workerID string) (job.Job, err
 		&j.ID, &j.Type, &j.Payload, &status,
 		&j.Attempts, &j.MaxAttempts,
 		&j.RunAt, &j.LockedAt, &j.LockedBy,
-		&j.LastError, &j.IdempotencyKey,&j.Priority,&j.UserID, &j.CreatedAt, &j.UpdatedAt,
+		&j.LastError, &j.IdempotencyKey, &j.Priority, &j.UserID, &j.CreatedAt, &j.UpdatedAt,
 	)
 
 	if err != nil {
@@ -199,7 +199,7 @@ func (r *JobsRepo) FetchNextPending(ctx context.Context) (job.Job, error) {
 		&j.ID, &j.Type, &j.Payload, &status,
 		&j.Attempts, &j.MaxAttempts,
 		&j.RunAt, &j.LockedAt, &j.LockedBy,
-		&j.LastError, &j.IdempotencyKey,&j.Priority, &j.UserID, &j.CreatedAt, &j.UpdatedAt,
+		&j.LastError, &j.IdempotencyKey, &j.Priority, &j.UserID, &j.CreatedAt, &j.UpdatedAt,
 	)
 
 	if err != nil {
@@ -229,7 +229,7 @@ func (r *JobsRepo) GetByIdempotencyKey(ctx context.Context, key string) (job.Job
 		&j.ID, &j.Type, &j.Payload, &status,
 		&j.Attempts, &j.MaxAttempts,
 		&j.RunAt, &j.LockedAt, &j.LockedBy,
-		&j.LastError, &j.IdempotencyKey,&j.Priority,&j.UserID,
+		&j.LastError, &j.IdempotencyKey, &j.Priority, &j.UserID,
 		&j.CreatedAt, &j.UpdatedAt,
 	)
 
@@ -308,7 +308,7 @@ func (r *JobsRepo) List(ctx context.Context, status *string, limit, offset int) 
 			&j.ID, &j.Type, &j.Payload, &st,
 			&j.Attempts, &j.MaxAttempts,
 			&j.RunAt, &j.LockedAt, &j.LockedBy,
-			&j.LastError, &j.IdempotencyKey,&j.Priority,&j.UserID,
+			&j.LastError, &j.IdempotencyKey, &j.Priority, &j.UserID,
 			&j.CreatedAt, &j.UpdatedAt,
 		)
 
@@ -340,7 +340,7 @@ func (r *JobsRepo) GetByID(ctx context.Context, id string) (job.Job, error) {
 		&j.ID, &j.Type, &j.Payload, &status,
 		&j.Attempts, &j.MaxAttempts,
 		&j.RunAt, &j.LockedAt, &j.LockedBy,
-		&j.LastError, &j.IdempotencyKey,&j.Priority,&j.UserID,
+		&j.LastError, &j.IdempotencyKey, &j.Priority, &j.UserID,
 		&j.CreatedAt, &j.UpdatedAt,
 	)
 
@@ -424,6 +424,3 @@ func (r *JobsRepo) RetryManyFailed(ctx context.Context, limit int) (int64, error
 	return tag.RowsAffected(), nil
 
 }
-
-
-

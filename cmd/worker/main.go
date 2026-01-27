@@ -40,13 +40,13 @@ func main() {
 
 	host, _ := os.Hostname()
 	workerID := host + "-" + strconv.Itoa(os.Getpid())
-	
+
 	baseNotifier := notifications.NewLogNotifier()
 
-	notifier := notifications.NewProtectedNotifier(baseNotifier,notifications.ProtectedNotifierConfig{
-		Timeout: 2 * time.Second,
+	notifier := notifications.NewProtectedNotifier(baseNotifier, notifications.ProtectedNotifierConfig{
+		Timeout:          2 * time.Second,
 		FailureThreshold: 3,
-		Cooldown: 15 * time.Second,
+		Cooldown:         15 * time.Second,
 		HalfOpenMaxCalls: 1,
 	})
 	deliveriesRepo := postgres.NewNotificationsDeliveriesRepo(pool)
@@ -56,7 +56,7 @@ func main() {
 		WorkerID:      workerID,
 		Concurrency:   1,
 		ShutdownGrace: 10 * time.Second,
-	}, jobsRepo, eventsRepo,notifier,deliveriesRepo)
+	}, jobsRepo, eventsRepo, notifier, deliveriesRepo)
 
 	log.Println("worker has started")
 

@@ -33,7 +33,7 @@ func (r *NotificationsDeliveriesRepo) TryStartRegistration(
 	`, kind, registrationID, jobID, recipient)
 
 	if err == nil {
-		return nil 
+		return nil
 	}
 	if !IsUniqueViolation(err) {
 		return err
@@ -121,4 +121,3 @@ func (r *NotificationsDeliveriesRepo) MarkRegistrationConfirmationFailed(
 
 	return err
 }
-

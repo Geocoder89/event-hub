@@ -22,7 +22,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-
 type recordingNotifier struct {
 	mu    sync.Mutex
 	calls []notifications.SendRegistrationConfirmationInput
@@ -70,7 +69,7 @@ func setupPipelineRouter(t *testing.T) (*gin.Engine, *pgxpool.Pool, config.Confi
 		JWTSecret:           "test-secret-key",
 		JWTAccessTTLMinutes: 60,
 		JWTRefreshTTLDays:   7,
-		RedisAddr:           "127.0.0.1:6379", 
+		RedisAddr:           "127.0.0.1:6379",
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
@@ -94,8 +93,6 @@ func resetPipelineDB(t *testing.T, pool *pgxpool.Pool) {
 		t.Fatalf("truncate: %v", err)
 	}
 }
-
-
 
 func TestPipeline_Register_EnqueuesJob_Worker_SendsOnce(t *testing.T) {
 	router, pool, _ := setupPipelineRouter(t)
@@ -124,9 +121,9 @@ func TestPipeline_Register_EnqueuesJob_Worker_SendsOnce(t *testing.T) {
 
 	// Parse registration id out of response ( handler returns reg)
 	var reg struct {
-		ID     string `json:"id"`
+		ID      string `json:"id"`
 		EventID string `json:"eventId"`
-		Email  string `json:"email"`
+		Email   string `json:"email"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &reg); err != nil {
 		t.Fatalf("parse register resp: %v body=%s", err, w.Body.String())

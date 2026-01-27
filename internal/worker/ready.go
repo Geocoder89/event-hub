@@ -19,7 +19,7 @@ func ReadyHandler(deps ReadinessDeps, isShuttingDown func() bool) http.Handler {
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 500 * time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 		defer cancel()
 
 		err := deps.Ping(ctx)
@@ -30,7 +30,11 @@ func ReadyHandler(deps ReadinessDeps, isShuttingDown func() bool) http.Handler {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ready"))
+		_, err = w.Write([]byte("ready"))
+
+		if err != nil {
+			return
+		}
 	})
 
 	return mux

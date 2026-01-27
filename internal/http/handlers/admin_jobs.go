@@ -19,7 +19,7 @@ type AdminJobsRepo interface {
 	List(ctx context.Context, status *string, limit, offset int) ([]job.Job, error)
 	GetByID(ctx context.Context, id string) (job.Job, error)
 	Retry(ctx context.Context, id string) error
-	RetryManyFailed(ctx context.Context, limit int)(int64, error)
+	RetryManyFailed(ctx context.Context, limit int) (int64, error)
 }
 
 type AdminJobsHandler struct {
@@ -135,7 +135,7 @@ func (h *AdminJobsHandler) Retry(ctx *gin.Context) {
 			return
 		}
 		if errors.Is(err, postgres.ErrJobNotFailed) {
-			RespondConflict(ctx,"job_not_failed", "Only failed jobs can be retried")
+			RespondConflict(ctx, "job_not_failed", "Only failed jobs can be retried")
 		}
 		RespondInternal(ctx, "Could not retry job")
 		return
@@ -147,10 +147,9 @@ func (h *AdminJobsHandler) Retry(ctx *gin.Context) {
 	})
 }
 
-
 // POST /admin/jobs/reprocess-dead?limit=50
 
-func (h *AdminJobsHandler) ReprocessDead (ctx *gin.Context) {
+func (h *AdminJobsHandler) ReprocessDead(ctx *gin.Context) {
 	limitStr := ctx.Query("limit")
 
 	limit := 50
@@ -161,7 +160,7 @@ func (h *AdminJobsHandler) ReprocessDead (ctx *gin.Context) {
 		if err == nil {
 			limit = n
 		} else {
-			RespondBadRequest(ctx, "invalid_request","limit must be a number")
+			RespondBadRequest(ctx, "invalid_request", "limit must be a number")
 			return
 		}
 	}

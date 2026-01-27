@@ -102,7 +102,7 @@ func TestPublishPipeline_EndToEnd(t *testing.T) {
 		WorkerID:      "test-worker",
 		Concurrency:   1,
 		ShutdownGrace: 1 * time.Second,
-	}, jobsRepo, eventsRepo,notifier,deliveriesRepo)
+	}, jobsRepo, eventsRepo, notifier, deliveriesRepo)
 
 	processed, err := wk.ProcessOne(context.Background())
 

@@ -6,9 +6,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-
-
-
 func (w *Worker) HealthHandler() http.Handler {
 	r := gin.New()
 
@@ -16,12 +13,11 @@ func (w *Worker) HealthHandler() http.Handler {
 
 	// liveness: process is up
 
-	r.GET("/healthz",func(ctx *gin.Context) {
+	r.GET("/healthz", func(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{
 			"ok": true,
 		})
 	})
-
 
 	// readiness: worker is able to claim + process
 	// keeping it simple: exposing an internal flag which can flip when shutting down

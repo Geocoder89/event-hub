@@ -5,12 +5,13 @@ import (
 
 	"github.com/geocoder89/eventhub/internal/http/middlewares"
 )
+
 func WithUserID(ctx context.Context, userID string) context.Context {
-	return context.WithValue(ctx, middlewares.KeyUserID,userID)
+	return context.WithValue(ctx, middlewares.KeyUserID, userID)
 }
 
-func UserIDFrom (ctx context.Context) (string, bool) {
+func UserIDFrom(ctx context.Context) (string, bool) {
 	v, ok := ctx.Value(middlewares.KeyUserID).(string)
 
-	return v,ok && v != ""
+	return v, ok && v != ""
 }

@@ -2,12 +2,10 @@ package notifications
 
 import "context"
 
-
-
 type SendRegistrationConfirmationInput struct {
-	Email string
-	Name string
-	EventID string
+	Email          string
+	Name           string
+	EventID        string
 	RegistrationID string
 }
 

@@ -232,7 +232,6 @@ producerLoop:
 	return nil
 }
 
-
 func (w *Worker) runWorker(ctx context.Context, workerNum int, jobsChan <-chan job.Job) {
 	for j := range jobsChan {
 		start := time.Now()

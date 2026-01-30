@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -42,6 +43,7 @@ type Config struct {
 	Concurrency   int // concurrency control
 	ShutdownGrace time.Duration
 	LockTTL       time.Duration
+	HealthAddr    string
 }
 
 type Worker struct {
@@ -132,13 +134,18 @@ func (w *Worker) requeueLoop(ctx context.Context) {
 
 func (w *Worker) Run(ctx context.Context) error {
 	// health server
-	srv := &http.Server{Addr: ":8081", Handler: w.HealthHandler()}
+	srv := &http.Server{Addr: w.cfg.HealthAddr, Handler: w.HealthHandler()}
 
 	healthDone := make(chan struct{})
 
 	go func() {
-		log.Println("worker health server started on :8081")
-		_ = srv.ListenAndServe()
+		log.Printf("worker health server starting on %s", w.cfg.HealthAddr)
+		log.Printf("worker boot pid=%d worker_id=%s health_addr=%s", os.Getpid(), w.cfg.WorkerID, w.cfg.HealthAddr)
+
+		err := srv.ListenAndServe()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("worker health server error: %v", err)
+		}
 		close(healthDone)
 	}()
 
@@ -387,6 +394,20 @@ func (w *Worker) execute(ctx context.Context, j job.Job) error {
 		time.Sleep(60 * time.Second)
 
 		return fmt.Errorf("unknown job type: %s", j.Type)
+
+	case "test.slow":
+		log.Printf("test.slow begin pid=%d job=%s", os.Getpid(), j.ID)
+
+		d := 120 * time.Second
+		if v := os.Getenv("TEST_SLOW_SLEEP"); v != "" {
+			if parsed, err := time.ParseDuration(v); err == nil {
+				d = parsed
+			}
+		}
+
+		time.Sleep(d)
+		log.Printf("test.slow end pid=%d job=%s", os.Getpid(), j.ID)
+		return nil
 
 	default:
 		time.Sleep(750 * time.Millisecond)

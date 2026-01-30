@@ -43,6 +43,11 @@ func main() {
 
 	baseNotifier := notifications.NewLogNotifier()
 
+	healthAddr := os.Getenv("WORKER_HEALTH_ADDR")
+	if healthAddr == "" {
+		healthAddr = ":8081"
+	}
+
 	notifier := notifications.NewProtectedNotifier(baseNotifier, notifications.ProtectedNotifierConfig{
 		Timeout:          2 * time.Second,
 		FailureThreshold: 3,
@@ -56,6 +61,8 @@ func main() {
 		WorkerID:      workerID,
 		Concurrency:   1,
 		ShutdownGrace: 10 * time.Second,
+		LockTTL:       30 * time.Second,
+		HealthAddr:    healthAddr,
 	}, jobsRepo, eventsRepo, notifier, deliveriesRepo)
 
 	log.Println("worker has started")

@@ -24,6 +24,15 @@ type RegistrationCreator interface {
 	CreateTx(ctx context.Context, tx pgx.Tx, req registration.CreateRegistrationRequest) (registration.Registration, error)
 	Create(ctx context.Context, req registration.CreateRegistrationRequest) (registration.Registration, error)
 	ListByEvent(ctx context.Context, eventID string) ([]registration.Registration, error)
+	ListByEventCursor(
+		ctx context.Context,
+		eventID string,
+		limit int,
+		afterCreatedAt time.Time,
+		afterID string,
+	) (items []registration.Registration, nextCursor *string, hasMore bool, err error)
+
+	CountForEvent(ctx context.Context, eventID string) (int, error)
 	GetByID(ctx context.Context, eventID, registrationID string) (registration.Registration, error)
 	Delete(ctx context.Context, eventID, registrationID string) error
 }
@@ -147,29 +156,62 @@ func (h *RegistrationHandler) Register(ctx *gin.Context) {
 func (h *RegistrationHandler) ListForEvent(ctx *gin.Context) {
 	eventID := ctx.Param("id")
 
+	fmt.Println(utils.IsUUID(eventID), "it is")
+	fmt.Println(eventID)
+
 	if !utils.IsUUID(eventID) {
-		RespondBadRequest(ctx, "invalid_id", "event id must be a valid UUID")
+		RespondBadRequest(ctx, "invalid_id", "id must be a valid UUID")
 		return
+	}
+
+	limit := parseIntDefault(ctx.Query("limit"), 20)
+	if limit < 1 || limit > 100 {
+		RespondBadRequest(ctx, "invalid_query", "limit must be between 1 and 100")
+		return
+	}
+
+	includeTotal := ctx.Query("includeTotal") == "true"
+	cursor := ctx.Query("cursor")
+
+	afterCreatedAt := time.Unix(0, 0).UTC()
+	afterID := "00000000-0000-0000-0000-000000000000"
+
+	if cursor != "" {
+		cur, err := utils.DecodeRegistrationCursor(cursor)
+		if err != nil {
+			RespondBadRequest(ctx, "invalid_query", "cursor is invalid")
+			return
+		}
+		afterCreatedAt = cur.CreatedAt
+		afterID = cur.ID
 	}
 
 	cctx, cancel := config.WithTimeout(2 * time.Second)
 	defer cancel()
 
-	regs, err := h.repo.ListByEvent(cctx, eventID)
+	items, next, hasMore, err := h.repo.ListByEventCursor(cctx, eventID, limit, afterCreatedAt, afterID)
 	if err != nil {
-		if errors.Is(err, event.ErrNotFound) {
-			RespondNotFound(ctx, "Event not found")
-			return
-		}
-
 		RespondInternal(ctx, "Could not list registrations")
 		return
 	}
 
+	var total any = nil
+	if includeTotal {
+		t, err := h.repo.CountForEvent(cctx, eventID)
+		if err != nil {
+			RespondInternal(ctx, "Could not count registrations")
+			return
+		}
+		total = t
+	}
+
 	ctx.JSON(http.StatusOK, gin.H{
-		"eventId":       eventID,
-		"count":         len(regs),
-		"registrations": regs,
+		"limit":      limit,
+		"count":      len(items),
+		"items":      items,
+		"hasMore":    hasMore,
+		"nextCursor": next,
+		"total":      total,
 	})
 }
 

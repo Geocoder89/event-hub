@@ -6,10 +6,15 @@ import (
 	"time"
 
 	"github.com/geocoder89/eventhub/internal/auth"
+	"github.com/geocoder89/eventhub/internal/cache"
 	"github.com/geocoder89/eventhub/internal/config"
 	"github.com/geocoder89/eventhub/internal/http/handlers"
 	"github.com/geocoder89/eventhub/internal/http/middlewares"
+	"github.com/geocoder89/eventhub/internal/observability"
 	"github.com/geocoder89/eventhub/internal/queue/redisclient"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 
 	// "github.com/geocoder89/eventhub/internal/repo/memory"
 	"github.com/geocoder89/eventhub/internal/repo/postgres"
@@ -29,11 +34,18 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 	})
 	r := gin.New()
 
+	// Prometheus set up
+
+	reg := prometheus.NewRegistry()
+	prom := observability.NewProm(reg)
+
 	// middleware
 
 	r.Use(gin.Recovery())
 	r.Use(middlewares.RequestID())
-	r.Use(middlewares.RequestLogger(log))
+	r.Use(otelgin.Middleware("eventhub-api"))
+	r.Use(prom.GinHandleMiddleware())
+	r.Use(middlewares.RequestLogger())
 	r.Use(middlewares.CORSMiddleware([]string{
 		"http://localhost:3000",
 	}))
@@ -79,11 +91,14 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 	// change to postgres
 
 	// wire up repositories
-	eventsRepo := postgres.NewEventsRepo(pool)
-	registrationRepo := postgres.NewRegistrationsRepo(pool)
+	eventsRepo := postgres.NewEventsRepo(pool, prom)
+	registrationRepo := postgres.NewRegistrationsRepo(pool, prom)
 	usersRepo := postgres.NewUsersRepo(pool)
 	refreshTokensRepo := postgres.NewRefreshTokensRepo(pool)
-	jobsRepo := postgres.NewJobsRepo(pool)
+	jobsRepo := postgres.NewJobsRepo(pool, prom)
+
+	// events cache
+	eventsCache := cache.New(10 * time.Second)
 
 	// JWT Manager
 	jwtManager := auth.NewManager(
@@ -92,7 +107,7 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 		time.Duration(cfg.JWTRefreshTTLDays)*24*time.Hour,
 	)
 	// Wire up more handler
-	eventsHandler := handlers.NewEventsHandler(eventsRepo)
+	eventsHandler := handlers.NewEventsHandlerWithCache(eventsRepo, eventsCache)
 	registrationHandler := handlers.NewRegistrationHandler(registrationRepo, jobsRepo)
 	jobsHandler := handlers.NewJobsHandler(jobsRepo)
 	authHandler := handlers.NewAuthHandler(usersRepo, usersRepo, jwtManager, refreshTokensRepo, cfg)
@@ -150,6 +165,9 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 		admin.DELETE("/events/:id", eventsHandler.DeleteEvent)
 		admin.POST("/events/:id/publish", jobsHandler.PublishEvent)
 	}
+
+	// prometheus endpoint
+	r.GET("/metrics", gin.WrapH(promhttp.HandlerFor(reg, promhttp.HandlerOpts{})))
 
 	return r
 }

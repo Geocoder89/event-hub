@@ -4,9 +4,11 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-func (w *Worker) HealthHandler() http.Handler {
+func (w *Worker) HealthHandler(reg *prometheus.Registry) http.Handler {
 	r := gin.New()
 
 	r.Use(gin.Recovery())
@@ -32,6 +34,9 @@ func (w *Worker) HealthHandler() http.Handler {
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
+
+	// Prometheus
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	return r
 }

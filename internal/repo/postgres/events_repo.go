@@ -5,29 +5,48 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/geocoder89/eventhub/internal/domain/event"
+	"github.com/geocoder89/eventhub/internal/observability"
+	"github.com/geocoder89/eventhub/internal/utils"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type EventsRepo struct {
 	pool *pgxpool.Pool
+	prom *observability.Prom
+}
+
+func (repo *EventsRepo) observe(op string, fn func() error) error {
+	if repo.prom != nil {
+		return repo.prom.ObserveDB(op, fn)
+	}
+	return fn()
 }
 
 // constructor function
 
-func NewEventsRepo(pool *pgxpool.Pool) *EventsRepo {
+func NewEventsRepo(pool *pgxpool.Pool, prom *observability.Prom) *EventsRepo {
 	return &EventsRepo{
 		pool: pool,
+		prom: prom,
 	}
 }
 
 func (r *EventsRepo) Create(ctx context.Context, req event.CreateEventRequest) (event.Event, error) {
+	var err error
 	e := event.NewFromCreateRequest(req)
+	op := "events.create"
 
-	_, err := r.pool.Exec(ctx,
-		`INSERT INTO events(id,title, description, city, start_at, capacity,created_at, updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, e.ID, e.Title, e.Description, e.City, e.StartAt, e.Capacity, e.CreatedAt, e.UpdatedAt)
+	err = r.observe(op, func() error {
+		_, err = r.pool.Exec(ctx,
+			`INSERT INTO events(id,title, description, city, start_at, capacity,created_at, updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, e.ID, e.Title, e.Description, e.City, e.StartAt, e.Capacity, e.CreatedAt, e.UpdatedAt)
+
+		return err
+	})
 
 	if err != nil {
 		return event.Event{}, err
@@ -38,6 +57,10 @@ func (r *EventsRepo) Create(ctx context.Context, req event.CreateEventRequest) (
 }
 
 func (r *EventsRepo) List(ctx context.Context, filteredEvents event.ListEventsFilter) ([]event.Event, int, error) {
+	var rows pgx.Rows
+	var err error
+	op := "events.list"
+
 	baseQuery :=
 		`SELECT id, 
 		title, 
@@ -89,8 +112,10 @@ func (r *EventsRepo) List(ctx context.Context, filteredEvents event.ListEventsFi
 
 	args = append(args, filteredEvents.Limit, filteredEvents.Offset)
 
-	rows, err := r.pool.Query(ctx, query, args...)
-
+	err = r.observe(op, func() error {
+		rows, err = r.pool.Query(ctx, query, args...)
+		return err
+	})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -123,9 +148,137 @@ func (r *EventsRepo) List(ctx context.Context, filteredEvents event.ListEventsFi
 	return output, total, nil
 }
 
+func (r *EventsRepo) Count(ctx context.Context, filteredEvents event.ListEventsFilter) (int, error) {
+	op := "events.count"
+
+	var conds []string
+	var args []interface{}
+	argsPos := 1
+
+	if filteredEvents.City != nil {
+		conds = append(conds, fmt.Sprintf("city = $%d", argsPos))
+		args = append(args, *filteredEvents.City)
+		argsPos++
+	}
+	if filteredEvents.From != nil {
+		conds = append(conds, fmt.Sprintf("start_at >= $%d", argsPos))
+		args = append(args, *filteredEvents.From)
+		argsPos++
+	}
+	if filteredEvents.To != nil {
+		conds = append(conds, fmt.Sprintf("start_at <= $%d", argsPos))
+		args = append(args, *filteredEvents.To)
+	}
+
+	q := "SELECT COUNT(*) FROM events"
+	if len(conds) > 0 {
+		q += " WHERE " + strings.Join(conds, " AND ")
+	}
+
+	var total int
+	err := r.observe(op, func() error {
+		return r.pool.QueryRow(ctx, q, args...).Scan(&total)
+	})
+	if err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+func (r *EventsRepo) ListCursor(
+	ctx context.Context,
+	filteredEvents event.ListEventsFilter,
+	afterStartAt time.Time,
+	afterID string,
+) (items []event.Event, nextCursor *string, hasMore bool, err error) {
+	op := "events.list_cursor"
+
+	var conds []string
+	var args []interface{}
+	argsPos := 1
+
+	// same filters as List()
+	if filteredEvents.City != nil {
+		conds = append(conds, fmt.Sprintf("city = $%d", argsPos))
+		args = append(args, *filteredEvents.City)
+		argsPos++
+	}
+	if filteredEvents.From != nil {
+		conds = append(conds, fmt.Sprintf("start_at >= $%d", argsPos))
+		args = append(args, *filteredEvents.From)
+		argsPos++
+	}
+	if filteredEvents.To != nil {
+		conds = append(conds, fmt.Sprintf("start_at <= $%d", argsPos))
+		args = append(args, *filteredEvents.To)
+		argsPos++
+	}
+
+	// keyset condition
+	conds = append(conds, fmt.Sprintf("(start_at, id) > ($%d, $%d)", argsPos, argsPos+1))
+	args = append(args, afterStartAt, afterID)
+	argsPos += 2
+
+	q := `
+		SELECT id, title, description, city, start_at, capacity, created_at, updated_at
+		FROM events
+	`
+	if len(conds) > 0 {
+		q += " WHERE " + strings.Join(conds, " AND ")
+	}
+
+	// LIMIT+1 to detect hasMore
+	limitPlusOne := filteredEvents.Limit + 1
+	q += fmt.Sprintf(" ORDER BY start_at ASC, id ASC LIMIT $%d", argsPos)
+	args = append(args, limitPlusOne)
+
+	var rows pgx.Rows
+	err = r.observe(op, func() error {
+		rows, err = r.pool.Query(ctx, q, args...)
+		return err
+	})
+	if err != nil {
+		return nil, nil, false, err
+	}
+	defer rows.Close()
+
+	out := make([]event.Event, 0, filteredEvents.Limit)
+
+	for rows.Next() {
+		var e event.Event
+		if scanErr := rows.Scan(
+			&e.ID, &e.Title, &e.Description, &e.City, &e.StartAt, &e.Capacity, &e.CreatedAt, &e.UpdatedAt,
+		); scanErr != nil {
+			return nil, nil, false, scanErr
+		}
+		out = append(out, e)
+	}
+	if rows.Err() != nil {
+		return nil, nil, false, rows.Err()
+	}
+
+	if len(out) > filteredEvents.Limit {
+		hasMore = true
+		out = out[:filteredEvents.Limit]
+		last := out[len(out)-1]
+
+		cur, encErr := utils.EncodeEventCursor(last.StartAt, last.ID)
+		if encErr != nil {
+			return nil, nil, false, encErr
+		}
+		nextCursor = &cur
+	}
+
+	return out, nextCursor, hasMore, nil
+}
+
 func (r *EventsRepo) GetByID(ctx context.Context, id string) (event.Event, error) {
 	var e event.Event
-	err := r.pool.QueryRow(ctx, `SELECT id, title, description,city,start_at,capacity,created_at,updated_at FROM events WHERE id =$1`, id).Scan(&e.ID, &e.Title, &e.Description, &e.City, &e.StartAt, &e.Capacity, &e.CreatedAt, &e.UpdatedAt)
+	var err error
+	op := "events.GetByID"
+
+	err = r.observe(op, func() error {
+		return r.pool.QueryRow(ctx, `SELECT id, title, description,city,start_at,capacity,created_at,updated_at FROM events WHERE id =$1`, id).Scan(&e.ID, &e.Title, &e.Description, &e.City, &e.StartAt, &e.Capacity, &e.CreatedAt, &e.UpdatedAt)
+	})
 
 	if err != nil {
 		return event.Event{}, event.ErrNotFound
@@ -136,10 +289,13 @@ func (r *EventsRepo) GetByID(ctx context.Context, id string) (event.Event, error
 
 func (r *EventsRepo) Update(ctx context.Context, id string, req event.UpdateEventRequest) (event.Event, error) {
 	var e event.Event
+	var err error
+	op := "events.update"
 
-	err := r.pool.QueryRow(
-		ctx,
-		`UPDATE events
+	err = r.observe(op, func() error {
+		return r.pool.QueryRow(
+			ctx,
+			`UPDATE events
 			SET title = $2,
 					description = $3,
 					city = $4,
@@ -148,22 +304,23 @@ func (r *EventsRepo) Update(ctx context.Context, id string, req event.UpdateEven
 					updated_at = NOW()
 		WHERE id = $1
 		RETURNING id, title, description, city, start_at, capacity,created_at,updated_at`,
-		id,
-		req.Title,
-		req.Description,
-		req.City,
-		req.StartAt,
-		req.Capacity,
-	).Scan(
-		&e.ID,
-		&e.Title,
-		&e.Description,
-		&e.City,
-		&e.StartAt,
-		&e.Capacity,
-		&e.CreatedAt,
-		&e.UpdatedAt,
-	)
+			id,
+			req.Title,
+			req.Description,
+			req.City,
+			req.StartAt,
+			req.Capacity,
+		).Scan(
+			&e.ID,
+			&e.Title,
+			&e.Description,
+			&e.City,
+			&e.StartAt,
+			&e.Capacity,
+			&e.CreatedAt,
+			&e.UpdatedAt,
+		)
+	})
 
 	if err != nil {
 		// if there are no rows matching the id
@@ -178,9 +335,17 @@ func (r *EventsRepo) Update(ctx context.Context, id string, req event.UpdateEven
 }
 
 func (r *EventsRepo) Delete(ctx context.Context, id string) error {
-	query, err := r.pool.Exec(ctx, `
+
+	var query pgconn.CommandTag
+	var err error
+	op := "events.delete"
+
+	err = r.observe(op, func() error {
+		query, err = r.pool.Exec(ctx, `
 		DELETE from events WHERE id = $1
 	`, id)
+		return err
+	})
 
 	if err != nil {
 
@@ -196,13 +361,22 @@ func (r *EventsRepo) Delete(ctx context.Context, id string) error {
 }
 
 func (r *EventsRepo) MarkPublished(ctx context.Context, eventID string) (bool, error) {
-	tag, err := r.pool.Exec(ctx, `
+
+	var tag pgconn.CommandTag
+	var err error
+
+	op := "events.mark_published"
+
+	err = r.observe(op, func() error {
+		tag, err = r.pool.Exec(ctx, `
 		UPDATE events
 		SET published_at = NOW(),
 		    updated_at = NOW()
 		WHERE id = $1
 		  AND published_at IS NULL
 	`, eventID)
+		return err
+	})
 	if err != nil {
 		return false, err
 	}

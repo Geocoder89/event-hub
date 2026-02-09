@@ -29,10 +29,15 @@ func RequestID() gin.HandlerFunc {
 	}
 }
 
-func RequestLogger(log *slog.Logger) gin.HandlerFunc {
+func RequestLogger() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		start := time.Now()
-		path := ctx.Request.URL.Path
+
+		route := ctx.FullPath()
+		if route == "" {
+			route = ctx.Request.URL.Path // fallback (e.g. 404)
+		}
+
 		method := ctx.Request.Method
 
 		ctx.Next()
@@ -42,6 +47,14 @@ func RequestLogger(log *slog.Logger) gin.HandlerFunc {
 
 		reqID, _ := ctx.Get("request_id")
 
-		log.Info("request", "method", method, "path", path, "status", status, "latency_ms", lat.Milliseconds(), "request_id", reqID)
+		slog.Default().InfoContext(
+			ctx.Request.Context(),
+			"http_request",
+			"method", method,
+			"route", route,
+			"status", status,
+			"latency_ms", lat.Milliseconds(),
+			"request_id", reqID,
+		)
 	}
 }

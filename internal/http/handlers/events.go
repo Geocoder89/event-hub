@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/geocoder89/eventhub/internal/cache"
 	"github.com/geocoder89/eventhub/internal/config"
 	"github.com/geocoder89/eventhub/internal/domain/event"
 	"github.com/geocoder89/eventhub/internal/utils"
@@ -17,7 +19,13 @@ import (
 type EventsCreator interface {
 	Create(ctx context.Context, req event.CreateEventRequest) (event.Event, error)
 	GetByID(ctx context.Context, id string) (event.Event, error)
+
+	// initial offset pagination
 	List(ctx context.Context, filter event.ListEventsFilter) ([]event.Event, int, error)
+
+	// NEW: keyset pagination + optional count
+	ListCursor(ctx context.Context, filter event.ListEventsFilter, afterStartAt time.Time, afterID string) (items []event.Event, nextCursor *string, hasMore bool, err error)
+	Count(ctx context.Context, filter event.ListEventsFilter) (int, error)
 
 	// update and delete events
 
@@ -26,11 +34,16 @@ type EventsCreator interface {
 }
 
 type EventsHandler struct {
-	repo EventsCreator
+	repo  EventsCreator
+	cache *cache.Cache
 }
 
 func NewEventsHandler(repo EventsCreator) *EventsHandler {
-	return &EventsHandler{repo: repo}
+	return &EventsHandler{repo: repo, cache: nil}
+}
+
+func NewEventsHandlerWithCache(repo EventsCreator, c *cache.Cache) *EventsHandler {
+	return &EventsHandler{repo: repo, cache: c}
 }
 
 // function to make sure, what is returned is a number for the limit query
@@ -66,37 +79,27 @@ func (e *EventsHandler) CreateEvent(ctx *gin.Context) {
 		return
 	}
 
+	if e.cache != nil {
+		e.cache.Clear()
+	}
+
 	ctx.JSON(http.StatusCreated, event)
 }
 
 func (h *EventsHandler) ListEvents(ctx *gin.Context) {
-	page := parseIntDefault(ctx.Query("page"), 1)
 	limit := parseIntDefault(ctx.Query("limit"), 20)
-
-	if page < 1 {
-		RespondBadRequest(ctx, "invalid_query", "page must be >= 1")
-		return
-	}
-
 	if limit < 1 || limit > 100 {
 		RespondBadRequest(ctx, "invalid_query", "limit must be between 1 and 100")
 		return
 	}
 
-	offset := (page - 1) * limit
-
-	// New filters
-
-	// city filter (optional)
+	// filters
 	var cityPtr *string
 	if city := ctx.Query("city"); city != "" {
 		cityPtr = &city
-
 	}
 
-	// date filters (optional)
 	var fromPtr, toPtr *time.Time
-
 	if fromStr := ctx.Query("from"); fromStr != "" {
 		t, err := time.Parse(time.RFC3339, fromStr)
 		if err != nil {
@@ -105,7 +108,6 @@ func (h *EventsHandler) ListEvents(ctx *gin.Context) {
 		}
 		fromPtr = &t
 	}
-
 	if toStr := ctx.Query("to"); toStr != "" {
 		t, err := time.Parse(time.RFC3339, toStr)
 		if err != nil {
@@ -115,65 +117,107 @@ func (h *EventsHandler) ListEvents(ctx *gin.Context) {
 		toPtr = &t
 	}
 
-	// final generated filter
-
 	filter := event.ListEventsFilter{
-		City:   cityPtr,
-		From:   fromPtr,
-		To:     toPtr,
-		Limit:  limit,
-		Offset: offset,
-	}
-	// optional timeout
-
-	cctx, cancel := config.WithTimeout(2 * time.Second)
-
-	defer cancel()
-
-	items, total, err := h.repo.List(cctx, filter)
-	// events, err := h.repo.List()
-
-	if err != nil {
-		RespondInternal(ctx, "Could not list events")
-
-		fmt.Println(err)
-		return
+		City:  cityPtr,
+		From:  fromPtr,
+		To:    toPtr,
+		Limit: limit,
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{
-		"page":  page,
-		"limit": limit,
-		"count": len(items),
-		"total": total,
-		"items": items,
-	})
-}
+	includeTotal := ctx.Query("includeTotal") == "true"
+	cursor := ctx.Query("cursor")
 
-func (h *EventsHandler) GetEventById(ctx *gin.Context) {
+	// Option A: first page works with NO cursor
+	afterStartAt := time.Unix(0, 0).UTC()
+	afterID := "00000000-0000-0000-0000-000000000000" // IMPORTANT: valid UUID
 
-	id := ctx.Param("id")
-
-	if !utils.IsUUID(id) {
-		RespondBadRequest(ctx, "invalid_id", "id must be a valid UUID")
-		return
-	}
-
-	cctx, cancel := config.WithTimeout(2 * time.Second)
-
-	defer cancel()
-	e, err := h.repo.GetByID(cctx, id)
-
-	if err != nil {
-		if err == event.ErrNotFound {
-			RespondNotFound(ctx, "Event not found")
+	if cursor != "" {
+		cur, err := utils.DecodeEventCursor(cursor)
+		if err != nil {
+			RespondBadRequest(ctx, "invalid_query", "cursor is invalid")
 			return
 		}
-		RespondInternal(ctx, "Could not fetch event")
+		afterStartAt = cur.StartAt
+		afterID = cur.ID
+
+	}
+
+	cacheable := cursor == "" && !includeTotal && h.cache != nil
+	cacheKey := ""
+
+	if cacheable {
+		cacheKey = utils.BuildEventsListCacheKey(limit, cityPtr, fromPtr, toPtr)
+
+		v, ok := h.cache.Get(cacheKey)
+
+		if ok {
+			slog.Info("events.list.cache_hit", "key", cacheKey)
+			ctx.JSON(http.StatusOK, v)
+			return
+		}
+		slog.Info("events.list.cache_miss", "key", cacheKey)
+	}
+
+	cctx, cancel := config.WithTimeout(2 * time.Second)
+	defer cancel()
+
+	items, next, hasMore, err := h.repo.ListCursor(cctx, filter, afterStartAt, afterID)
+	if err != nil {
+		RespondInternal(ctx, "Could not list events")
 		return
 	}
 
-	ctx.JSON(http.StatusOK, e)
+	var total any = nil
+	if includeTotal {
+		t, err := h.repo.Count(cctx, filter)
+		if err != nil {
+			RespondInternal(ctx, "Could not count events")
+			return
+		}
+		total = t
+	}
 
+	resp := gin.H{
+		"limit":      limit,
+		"count":      len(items),
+		"items":      items,
+		"hasMore":    hasMore,
+		"nextCursor": next,  // *string -> null when nil
+		"total":      total, // null unless includeTotal=true
+	}
+
+	if cacheable {
+		h.cache.Set(cacheKey, resp)
+	}
+
+	ctx.JSON(http.StatusOK, resp)
+}
+
+func (h *EventsHandler) GetEventById(c *gin.Context) {
+	id := c.Param("id")
+
+	if !utils.IsUUID(id) {
+		RespondBadRequest(c, "invalid_id", "id must be a valid UUID")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+	defer cancel()
+
+	slog.Default().InfoContext(ctx, "events.get_by_id", "event_id", id)
+
+	e, err := h.repo.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, event.ErrNotFound) {
+			RespondNotFound(c, "Event not found")
+			return
+		}
+		slog.Default().ErrorContext(ctx, "events.get_by_id_failed", "event_id", id, "err", err)
+		RespondInternal(c, "Could not fetch event")
+		return
+	}
+
+	c.JSON(http.StatusOK, e)
 }
 
 func (h *EventsHandler) UpdateEvent(ctx *gin.Context) {
@@ -209,6 +253,10 @@ func (h *EventsHandler) UpdateEvent(ctx *gin.Context) {
 		return
 
 	}
+
+	if h.cache != nil {
+		h.cache.Clear()
+	}
 	ctx.JSON(http.StatusOK, e)
 }
 
@@ -239,5 +287,8 @@ func (h *EventsHandler) DeleteEvent(ctx *gin.Context) {
 
 	}
 
+	if h.cache != nil {
+		h.cache.Clear()
+	}
 	ctx.Status(http.StatusNoContent) //204 empty body.
 }

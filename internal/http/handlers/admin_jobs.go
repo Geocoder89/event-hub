@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -16,7 +15,13 @@ import (
 )
 
 type AdminJobsRepo interface {
-	List(ctx context.Context, status *string, limit, offset int) ([]job.Job, error)
+	ListCursor(
+		ctx context.Context,
+		status *string,
+		limit int,
+		afterUpdatedAt time.Time,
+		afterID string,
+	) (items []job.Job, nextCursor *string, hasMore bool, err error)
 	GetByID(ctx context.Context, id string) (job.Job, error)
 	Retry(ctx context.Context, id string) error
 	RetryManyFailed(ctx context.Context, limit int) (int64, error)
@@ -32,60 +37,65 @@ func NewAdminJobsHandler(repo AdminJobsRepo) *AdminJobsHandler {
 	}
 }
 
-func parseInt(s string, fallback int) int {
-	if s == "" {
-		return fallback
-	}
+// func parseInt(s string, fallback int) int {
+// 	if s == "" {
+// 		return fallback
+// 	}
 
-	n, err := strconv.Atoi(s)
+// 	n, err := strconv.Atoi(s)
 
-	if err != nil {
-		return fallback
-	}
+// 	if err != nil {
+// 		return fallback
+// 	}
 
-	return n
-}
+// 	return n
+// }
 
 // Get /admin/jobs?status=failed&limit=50&offset=0
 
 func (h *AdminJobsHandler) List(ctx *gin.Context) {
-	limit := parseInt(ctx.Query("limit"), 50)
-	offset := parseInt(ctx.Query("offset"), 0)
-
-	if limit < 1 || limit > 200 {
-		RespondBadRequest(ctx, "invalid_query", "limit must be between 1 and 200")
+	limit := parseIntDefault(ctx.Query("limit"), 20)
+	if limit < 1 || limit > 100 {
+		RespondBadRequest(ctx, "invalid_query", "limit must be between 1 and 100")
 		return
 	}
 
-	if offset < 0 {
-		RespondBadRequest(ctx, "invalid_query", "offset must be >= 0")
-		return
+	var statusPtr *string
+	if s := ctx.Query("status"); s != "" {
+		statusPtr = &s
 	}
 
-	var statusPointer *string
-	s := ctx.Query("status")
+	cursor := ctx.Query("cursor")
 
-	if s != "" {
-		statusPointer = &s
+	// DESC first-page sentinel: "far future" + max UUID
+	afterUpdatedAt := time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)
+	afterID := "ffffffff-ffff-ffff-ffff-ffffffffffff"
+
+	if cursor != "" {
+		cur, err := utils.DecodeJobCursor(cursor)
+		if err != nil {
+			RespondBadRequest(ctx, "invalid_query", "cursor is invalid")
+			return
+		}
+		afterUpdatedAt = cur.UpdatedAt
+		afterID = cur.ID
 	}
 
 	cctx, cancel := config.WithTimeout(2 * time.Second)
-
 	defer cancel()
 
-	items, err := h.repo.List(cctx, statusPointer, limit, offset)
-
+	items, next, hasMore, err := h.repo.ListCursor(cctx, statusPtr, limit, afterUpdatedAt, afterID)
 	if err != nil {
-		fmt.Println(err)
 		RespondInternal(ctx, "Could not list jobs")
 		return
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"limit":  limit,
-		"offset": offset,
-		"count":  len(items),
-		"items":  items,
+		"limit":      limit,
+		"count":      len(items),
+		"items":      items,
+		"hasMore":    hasMore,
+		"nextCursor": next,
 	})
 }
 

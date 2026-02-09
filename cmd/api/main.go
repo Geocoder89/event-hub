@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -50,6 +51,23 @@ func main() {
 	}
 	cancel()
 
+	// setup log tracing with Open telemetry.
+
+	otlpEndpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if otlpEndpoint == "" {
+		otlpEndpoint = "localhost:4317"
+	}
+
+	shutdownTracer, err := observability.InitTracer(context.Background(), "eventhub-api", otlpEndpoint)
+	if err != nil {
+		log.Error("otel init failed", "err", err)
+		os.Exit(1)
+	}
+	defer func() { _ = shutdownTracer(context.Background()) }()
+
+	// Make slog include trace_id/span_id when you use InfoContext
+	base := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
+	slog.SetDefault(slog.New(observability.NewTraceHandler(base)))
 	// set up routers with the log
 	router := httpx.NewRouter(log, pool, cfg)
 

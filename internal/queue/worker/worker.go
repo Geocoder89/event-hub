@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"sync"
@@ -18,6 +19,11 @@ import (
 	"github.com/geocoder89/eventhub/internal/notifications"
 	"github.com/geocoder89/eventhub/internal/observability"
 	"github.com/geocoder89/eventhub/internal/repo/postgres"
+	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type publishPayload struct {
@@ -47,14 +53,15 @@ type Config struct {
 }
 
 type Worker struct {
-	cfg        Config
-	repo       JobsRepository
-	events     EventsRepository
-	metrics    *observability.JobMetrics
-	notifier   notifications.Notifier
-	deliveries *postgres.NotificationsDeliveriesRepo
-	readyMu    sync.RWMutex
-	ready      bool
+	cfg          Config
+	repo         JobsRepository
+	events       EventsRepository
+	metrics      *observability.JobMetrics
+	notifier     notifications.Notifier
+	deliveries   *postgres.NotificationsDeliveriesRepo
+	readyMu      sync.RWMutex
+	ready        bool
+	PromRegistry *prometheus.Registry
 }
 
 func optional(v *string) string {
@@ -83,6 +90,8 @@ func New(cfg Config, repo JobsRepository, events EventsRepository, notifier noti
 		ready:      true,
 	}
 }
+
+var tracer = otel.Tracer("eventhub-worker")
 
 func (w *Worker) logMetricsLoop(ctx context.Context, every time.Duration) {
 	t := time.NewTicker(every)
@@ -134,7 +143,7 @@ func (w *Worker) requeueLoop(ctx context.Context) {
 
 func (w *Worker) Run(ctx context.Context) error {
 	// health server
-	srv := &http.Server{Addr: w.cfg.HealthAddr, Handler: w.HealthHandler()}
+	srv := &http.Server{Addr: w.cfg.HealthAddr, Handler: w.HealthHandler(w.PromRegistry)}
 
 	healthDone := make(chan struct{})
 
@@ -240,69 +249,124 @@ producerLoop:
 }
 
 func (w *Worker) runWorker(ctx context.Context, workerNum int, jobsChan <-chan job.Job) {
+
 	for j := range jobsChan {
 		start := time.Now()
 
-		uid := ""
-
-		if j.UserID != nil {
-			uid = *j.UserID
-		}
-
-		log.Printf(
-			"job.start worker_num=%d job_id=%s job_type=%s user_id=%s attempts=%d/%d",
-			workerNum, j.ID, j.Type, uid, j.Attempts, j.MaxAttempts,
-		)
-
+		// Build execCtx (actor context etc.)
 		execCtx := ctx
-
 		if j.UserID != nil && *j.UserID != "" {
 			execCtx = actorctx.WithUserID(execCtx, *j.UserID)
 		}
 
-		// Execute
-		if err := w.execute(execCtx, j); err != nil {
-			w.handleFailure(execCtx, j, err)
-			d := time.Since(start)
-			w.metrics.ObserveDuration(d)
-			w.metrics.IncFailed()
-			log.Printf(
-				"job.error worker=%d job=%s type=%s dur=%s err=%v",
-				workerNum, j.ID, j.Type, d, err,
-			)
-			continue
-		}
-
-		// Mark done
-		if err := w.repo.MarkDone(execCtx, j.ID); err != nil {
-			d := time.Since(start)
-			w.metrics.ObserveDuration(d)
-			w.metrics.IncFailed()
-
-			log.Printf(
-				"job.error worker=%d job=%s type=%s dur=%s err=%v",
-				workerNum, j.ID, j.Type, d, err,
-			)
-
-			_ = w.repo.MarkFailed(execCtx, j.ID, "mark_done_failed: "+err.Error())
-			continue
-
-		}
-
-		d := time.Since(start)
-		w.metrics.ObserveDuration(d)
-		w.metrics.IncDone()
-
-		lockedBy := ""
-		if j.LockedBy != nil {
-			lockedBy = *j.LockedBy
-		}
-
-		log.Printf(
-			"job.done worker_num=%d locked_by=%s job_id=%s job_type=%s user_id=%s duration_ms=%d",
-			workerNum, lockedBy, j.ID, j.Type, optional(j.UserID), time.Since(start).Milliseconds(),
+		// Start span for this job
+		execCtx, span := tracer.Start(execCtx, "job.run",
+			trace.WithAttributes(
+				attribute.String("job.id", j.ID),
+				attribute.String("job.type", j.Type),
+				attribute.Int("job.attempts", j.Attempts),
+				attribute.Int("job.max_attempts", j.MaxAttempts),
+				attribute.String("worker.id", w.cfg.WorkerID),
+				attribute.Int("worker.num", workerNum),
+			),
 		)
 
+		// Always end span
+		func() {
+			defer span.End()
+
+			slog.Default().InfoContext(execCtx, "job.start",
+				"worker_num", workerNum,
+				"worker_id", w.cfg.WorkerID,
+				"job_id", j.ID,
+				"job_type", j.Type,
+				"user_id", optional(j.UserID),
+				"attempts", fmt.Sprintf("%d/%d", j.Attempts, j.MaxAttempts),
+			)
+
+			// Execute
+			if err := w.execute(execCtx, j); err != nil {
+				// span bookkeeping
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
+
+				// handle retry/dead-letter
+				w.handleFailure(execCtx, j, err)
+
+				d := time.Since(start)
+				if w.metrics != nil {
+					w.metrics.ObserveDuration(d)
+					w.metrics.IncFailed()
+				}
+
+				span.SetAttributes(
+					attribute.Int64("job.duration_ms", d.Milliseconds()),
+					attribute.String("job.result", "error"),
+				)
+
+				// Trace-aware error log
+				slog.Default().ErrorContext(execCtx, "job.error",
+					"worker_num", workerNum,
+					"worker_id", w.cfg.WorkerID,
+					"job_id", j.ID,
+					"job_type", j.Type,
+					"duration_ms", d.Milliseconds(),
+					"err", err,
+				)
+				return
+			}
+
+			// Mark done
+			if err := w.repo.MarkDone(execCtx, j.ID); err != nil {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, "mark_done_failed")
+
+				d := time.Since(start)
+				if w.metrics != nil {
+					w.metrics.ObserveDuration(d)
+					w.metrics.IncFailed()
+				}
+
+				span.SetAttributes(
+					attribute.Int64("job.duration_ms", d.Milliseconds()),
+					attribute.String("job.result", "mark_done_failed"),
+				)
+
+				slog.Default().ErrorContext(execCtx, "job.mark_done_failed",
+					"worker_num", workerNum,
+					"worker_id", w.cfg.WorkerID,
+					"job_id", j.ID,
+					"job_type", j.Type,
+					"duration_ms", d.Milliseconds(),
+					"err", err,
+				)
+
+				_ = w.repo.MarkFailed(execCtx, j.ID, "mark_done_failed: "+err.Error())
+				return
+			}
+
+			// Success
+			d := time.Since(start)
+			if w.metrics != nil {
+				w.metrics.ObserveDuration(d)
+				w.metrics.IncDone()
+			}
+
+			span.SetStatus(codes.Ok, "done")
+			span.SetAttributes(
+				attribute.Int64("job.duration_ms", d.Milliseconds()),
+				attribute.String("job.result", "done"),
+			)
+
+			slog.Default().InfoContext(execCtx, "job.done",
+				"worker_num", workerNum,
+				"worker_id", w.cfg.WorkerID,
+				"job_id", j.ID,
+				"job_type", j.Type,
+				"user_id", optional(j.UserID),
+				"duration_ms", d.Milliseconds(),
+			)
+		}()
 	}
 }
 

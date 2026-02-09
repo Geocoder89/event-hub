@@ -160,8 +160,8 @@ func TestPipeline_Register_EnqueuesJob_Worker_SendsOnce(t *testing.T) {
 	}
 
 	// 4) Run worker once (Worker step)
-	jobsRepo := postgres.NewJobsRepo(pool)
-	eventsRepo := postgres.NewEventsRepo(pool)
+	jobsRepo := postgres.NewJobsRepo(pool, nil)
+	eventsRepo := postgres.NewEventsRepo(pool, nil)
 	deliveriesRepo := postgres.NewNotificationsDeliveriesRepo(pool)
 
 	rec := &recordingNotifier{}

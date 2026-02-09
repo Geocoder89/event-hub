@@ -92,8 +92,8 @@ func TestPublishPipeline_EndToEnd(t *testing.T) {
 	}
 
 	// Process job with worker step
-	jobsRepo := postgres.NewJobsRepo(pool)
-	eventsRepo := postgres.NewEventsRepo(pool)
+	jobsRepo := postgres.NewJobsRepo(pool, nil)
+	eventsRepo := postgres.NewEventsRepo(pool, nil)
 	deliveriesRepo := postgres.NewNotificationsDeliveriesRepo(pool)
 	notifier := notifications.NewLogNotifier()
 

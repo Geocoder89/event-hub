@@ -1,0 +1,1069 @@
+openapi: 3.0.3
+info:
+  title: EventHub API
+  version: 0.2.0
+  description: |
+    MVP OpenAPI spec for EventHub.
+    Focused on core auth, events, registrations, and admin operations.
+servers:
+  - url: http://localhost:8080
+    description: Local development
+tags:
+  - name: Health
+  - name: Auth
+  - name: Events
+  - name: Registrations
+  - name: Admin
+  - name: Observability
+
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Liveness check
+      operationId: healthz
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok:
+                    type: boolean
+              example:
+                ok: true
+
+  /readyz:
+    get:
+      tags: [Health]
+      summary: Readiness check
+      operationId: readyz
+      responses:
+        "200":
+          description: Dependencies are available
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+              example:
+                status: ready
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /metrics:
+    get:
+      tags: [Observability]
+      summary: Prometheus metrics
+      operationId: metrics
+      responses:
+        "200":
+          description: Prometheus text exposition
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /signup:
+    post:
+      tags: [Auth]
+      summary: Create user account
+      operationId: signup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignUpRequest"
+            example:
+              email: sam@example.com
+              password: supersecure123
+              name: Sam Example
+      responses:
+        "201":
+          description: User created and session started
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: HttpOnly refresh_token cookie
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessTokenResponse"
+              example:
+                accessToken: eyJhbGciOi...
+        "400":
+          $ref: "#/components/responses/Error"
+        "415":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /login:
+    post:
+      tags: [Auth]
+      summary: Login with email and password
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+            example:
+              email: sam@example.com
+              password: supersecure123
+      responses:
+        "200":
+          description: Login successful
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: HttpOnly refresh_token cookie
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessTokenResponse"
+              example:
+                accessToken: eyJhbGciOi...
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "415":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate refresh token and get a new access token
+      operationId: refreshSession
+      security:
+        - refreshTokenCookie: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        "200":
+          description: Session refreshed
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: Rotated HttpOnly refresh_token cookie
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessTokenResponse"
+              example:
+                accessToken: eyJhbGciOi...
+        "401":
+          $ref: "#/components/responses/Error"
+        "415":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout and clear refresh cookie
+      operationId: logout
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        "204":
+          description: Logged out
+        "415":
+          $ref: "#/components/responses/Error"
+
+  /events:
+    get:
+      tags: [Events]
+      summary: List events
+      operationId: listEvents
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/City"
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/IncludeTotal"
+      responses:
+        "200":
+          description: Events page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventListResponse"
+              example:
+                limit: 20
+                count: 2
+                items:
+                  - id: 3d8e4d13-bad3-4fb7-9022-8b5fa77111d2
+                    title: Go Backend Deep Dive
+                    description: Build and ship a production Go API
+                    city: Lagos
+                    startAt: 2026-03-01T09:00:00Z
+                    capacity: 120
+                    createdAt: 2026-02-01T12:00:00Z
+                    updatedAt: 2026-02-01T12:00:00Z
+                  - id: 7f027825-9162-4d6e-ae66-6d6be2178698
+                    title: Intro to Distributed Systems
+                    description: Practical patterns for reliability
+                    city: Abuja
+                    startAt: 2026-03-03T10:30:00Z
+                    capacity: 90
+                    createdAt: 2026-02-02T12:00:00Z
+                    updatedAt: 2026-02-02T12:00:00Z
+                hasMore: true
+                nextCursor: eyJzdGFydEF0IjoiMjAyNi0wMy0wM1QxMDozMDowMFoiLCJpZCI6IjdmMDI3ODI1LTkxNjItNGQ2ZS1hZTY2LTZkNmJlMjE3ODY5OCJ9
+                total: null
+        "400":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /events/{id}:
+    get:
+      tags: [Events]
+      summary: Get event by ID
+      operationId: getEvent
+      parameters:
+        - $ref: "#/components/parameters/EventID"
+      responses:
+        "200":
+          description: Event details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+              example:
+                id: 3d8e4d13-bad3-4fb7-9022-8b5fa77111d2
+                title: Go Backend Deep Dive
+                description: Build and ship a production Go API
+                city: Lagos
+                startAt: 2026-03-01T09:00:00Z
+                capacity: 120
+                createdAt: 2026-02-01T12:00:00Z
+                updatedAt: 2026-02-01T12:00:00Z
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /events/{id}/register:
+    post:
+      tags: [Registrations]
+      summary: Register authenticated user for an event
+      operationId: registerForEvent
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/EventID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRegistrationRequest"
+            example:
+              name: Sam Example
+              email: sam@example.com
+      responses:
+        "201":
+          description: Registration created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Registration"
+              example:
+                id: 34ce1066-d41e-4d28-9231-1ec6dd3cf1f5
+                eventId: 3d8e4d13-bad3-4fb7-9022-8b5fa77111d2
+                userId: c08d8f49-d4b5-4388-a20a-77fc29df2d64
+                name: Sam Example
+                email: sam@example.com
+                createdAt: 2026-02-10T08:00:00Z
+                updatedAt: 2026-02-10T08:00:00Z
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "415":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /events/{id}/registrations:
+    get:
+      tags: [Registrations]
+      summary: List registrations for an event
+      operationId: listRegistrationsForEvent
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/EventID"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/IncludeTotal"
+      responses:
+        "200":
+          description: Registration page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistrationListResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /events/{id}/registrations/{registrationId}:
+    delete:
+      tags: [Registrations]
+      summary: Cancel registration
+      operationId: cancelRegistration
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/EventID"
+        - $ref: "#/components/parameters/RegistrationID"
+      responses:
+        "204":
+          description: Canceled
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /admin/events:
+    post:
+      tags: [Admin]
+      summary: Create event (admin)
+      operationId: adminCreateEvent
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEventRequest"
+            example:
+              title: Production Observability Workshop
+              description: Metrics, traces, logs and alerting
+              city: Lagos
+              startAt: 2026-03-10T10:00:00Z
+              capacity: 150
+      responses:
+        "201":
+          description: Event created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "415":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /admin/events/{id}:
+    put:
+      tags: [Admin]
+      summary: Update event (admin)
+      operationId: adminUpdateEvent
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/EventID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEventRequest"
+      responses:
+        "200":
+          description: Event updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "415":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Admin]
+      summary: Delete event (admin)
+      operationId: adminDeleteEvent
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/EventID"
+      responses:
+        "204":
+          description: Event deleted
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /admin/events/{id}/publish:
+    post:
+      tags: [Admin]
+      summary: Enqueue publish job (admin)
+      operationId: adminPublishEvent
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/EventID"
+        - $ref: "#/components/parameters/RunAt"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishJobAcceptedResponse"
+              examples:
+                created:
+                  value:
+                    jobId: b5a7a0cb-9116-4ed1-abdd-5c1f529f64eb
+                    status: pending
+                    type: event.publish
+                alreadyEnqueued:
+                  value:
+                    jobId: b5a7a0cb-9116-4ed1-abdd-5c1f529f64eb
+                    status: pending
+                    type: event.publish
+                    alreadyEnqueued: true
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "415":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /admin/jobs:
+    get:
+      tags: [Admin]
+      summary: List jobs (admin)
+      operationId: adminListJobs
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/JobStatus"
+      responses:
+        "200":
+          description: Jobs page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobsListResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /admin/jobs/{id}:
+    get:
+      tags: [Admin]
+      summary: Get job by ID (admin)
+      operationId: adminGetJob
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+      responses:
+        "200":
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /admin/jobs/{id}/retry:
+    post:
+      tags: [Admin]
+      summary: Retry a failed job (admin)
+      operationId: adminRetryJob
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        "200":
+          description: Job reset to pending
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetryJobResponse"
+              example:
+                jobId: b5a7a0cb-9116-4ed1-abdd-5c1f529f64eb
+                status: pending
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "415":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /admin/jobs/reprocess-dead:
+    post:
+      tags: [Admin]
+      summary: Requeue failed jobs in bulk (admin)
+      operationId: adminReprocessDead
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          description: Max failed jobs to requeue.
+          schema:
+            type: integer
+            minimum: 1
+            default: 50
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        "200":
+          description: Bulk requeue result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReprocessDeadResponse"
+              example:
+                requeued: 12
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "415":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    refreshTokenCookie:
+      type: apiKey
+      in: cookie
+      name: refresh_token
+
+  parameters:
+    EventID:
+      in: path
+      name: id
+      required: true
+      description: Event UUID.
+      schema:
+        type: string
+        format: uuid
+    RegistrationID:
+      in: path
+      name: registrationId
+      required: true
+      description: Registration UUID.
+      schema:
+        type: string
+        format: uuid
+    JobID:
+      in: path
+      name: id
+      required: true
+      description: Job UUID.
+      schema:
+        type: string
+        format: uuid
+    Limit:
+      in: query
+      name: limit
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    Cursor:
+      in: query
+      name: cursor
+      required: false
+      description: Base64url keyset cursor.
+      schema:
+        type: string
+    IncludeTotal:
+      in: query
+      name: includeTotal
+      required: false
+      schema:
+        type: boolean
+        default: false
+    City:
+      in: query
+      name: city
+      required: false
+      schema:
+        type: string
+    From:
+      in: query
+      name: from
+      required: false
+      description: RFC3339 timestamp lower bound for `startAt`.
+      schema:
+        type: string
+        format: date-time
+    To:
+      in: query
+      name: to
+      required: false
+      description: RFC3339 timestamp upper bound for `startAt`.
+      schema:
+        type: string
+        format: date-time
+    RunAt:
+      in: query
+      name: runAt
+      required: false
+      description: RFC3339 timestamp, now or future.
+      schema:
+        type: string
+        format: date-time
+    JobStatus:
+      in: query
+      name: status
+      required: false
+      schema:
+        type: string
+        enum: [pending, processing, done, failed]
+
+  responses:
+    Error:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            generic:
+              value:
+                error:
+                  code: invalid_request
+                  message: Invalid request body
+                  requestId: 4bca7777d14b4b1a
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            requestId:
+              type: string
+              nullable: true
+            details:
+              nullable: true
+              oneOf:
+                - type: string
+                - type: object
+                  additionalProperties: true
+                - type: array
+                  items:
+                    type: object
+                    additionalProperties: true
+
+    AccessTokenResponse:
+      type: object
+      required: [accessToken]
+      properties:
+        accessToken:
+          type: string
+
+    SignUpRequest:
+      type: object
+      required: [email, password, name]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    Event:
+      type: object
+      required: [id, title, startAt, capacity, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        city:
+          type: string
+        startAt:
+          type: string
+          format: date-time
+        capacity:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateEventRequest:
+      type: object
+      required: [title, startAt, capacity]
+      properties:
+        title:
+          type: string
+          minLength: 3
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 1000
+        city:
+          type: string
+          minLength: 2
+          maxLength: 80
+        startAt:
+          type: string
+          format: date-time
+        capacity:
+          type: integer
+          minimum: 1
+          maximum: 50000
+
+    UpdateEventRequest:
+      allOf:
+        - $ref: "#/components/schemas/CreateEventRequest"
+
+    EventListResponse:
+      type: object
+      required: [limit, count, items, hasMore, nextCursor, total]
+      properties:
+        limit:
+          type: integer
+        count:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Event"
+        hasMore:
+          type: boolean
+        nextCursor:
+          type: string
+          nullable: true
+        total:
+          type: integer
+          nullable: true
+
+    CreateRegistrationRequest:
+      type: object
+      required: [name, email]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        email:
+          type: string
+          format: email
+          maxLength: 254
+
+    Registration:
+      type: object
+      required: [id, eventId, userId, name, email, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        eventId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    RegistrationListResponse:
+      type: object
+      required: [limit, count, items, hasMore, nextCursor, total]
+      properties:
+        limit:
+          type: integer
+        count:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Registration"
+        hasMore:
+          type: boolean
+        nextCursor:
+          type: string
+          nullable: true
+        total:
+          type: integer
+          nullable: true
+
+    Job:
+      type: object
+      required:
+        - id
+        - type
+        - payload
+        - status
+        - attempts
+        - maxAttempts
+        - runAt
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          example: event.publish
+        payload:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+          enum: [pending, processing, done, failed]
+        attempts:
+          type: integer
+        maxAttempts:
+          type: integer
+        runAt:
+          type: string
+          format: date-time
+        lockedAt:
+          type: string
+          format: date-time
+          nullable: true
+        lockedBy:
+          type: string
+          nullable: true
+        lastError:
+          type: string
+          nullable: true
+        idempotencyKey:
+          type: string
+          nullable: true
+        priority:
+          type: integer
+        userId:
+          type: string
+          format: uuid
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    JobsListResponse:
+      type: object
+      required: [limit, count, items, hasMore, nextCursor]
+      properties:
+        limit:
+          type: integer
+        count:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Job"
+        hasMore:
+          type: boolean
+        nextCursor:
+          type: string
+          nullable: true
+
+    PublishJobAcceptedResponse:
+      type: object
+      required: [jobId, status, type]
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, processing, done, failed]
+        type:
+          type: string
+        alreadyEnqueued:
+          type: boolean
+
+    RetryJobResponse:
+      type: object
+      required: [jobId, status]
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        status:
+          type: string
+
+    ReprocessDeadResponse:
+      type: object
+      required: [requeued]
+      properties:
+        requeued:
+          type: integer

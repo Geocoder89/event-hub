@@ -124,6 +124,11 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 	// public routes
 	r.GET("/healthz", h.Healthz)
 	r.GET("/readyz", h.Readyz)
+	r.GET("/docs/openapi.yaml", func(ctx *gin.Context) {
+		ctx.File("docs/openapi.yaml")
+	})
+	r.GET("/swagger", handlers.SwaggerUI)
+	r.GET("/swagger/", handlers.SwaggerUI)
 
 	r.POST("/signup", signupLimiter.RateLimiterMiddleware(middlewares.KeyByIP), authHandler.SignUp)
 	r.POST("/login", loginLimiter.RateLimiterMiddleware(middlewares.KeyByIP), authHandler.Login)

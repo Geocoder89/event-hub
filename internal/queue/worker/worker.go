@@ -27,7 +27,8 @@ import (
 )
 
 type publishPayload struct {
-	EventID string `json:"eventId"`
+	EventID   string `json:"eventId"`
+	RequestID string `json:"requestId,omitempty"`
 }
 
 type JobsRepository interface {
@@ -69,6 +70,26 @@ func optional(v *string) string {
 		return "null"
 	}
 	return *v
+}
+
+func requestIDFromPayload(payload []byte) string {
+	var carrier struct {
+		RequestID string `json:"requestId"`
+	}
+
+	if err := json.Unmarshal(payload, &carrier); err != nil {
+		return ""
+	}
+
+	return carrier.RequestID
+}
+
+func requestIDFromContext(ctx context.Context) string {
+	if v, ok := actorctx.RequestIDFrom(ctx); ok {
+		return v
+	}
+
+	return ""
 }
 
 func New(cfg Config, repo JobsRepository, events EventsRepository, notifier notifications.Notifier, deliveries *postgres.NotificationsDeliveriesRepo,
@@ -255,19 +276,31 @@ func (w *Worker) runWorker(ctx context.Context, workerNum int, jobsChan <-chan j
 
 		// Build execCtx (actor context etc.)
 		execCtx := ctx
+		if reqID := requestIDFromPayload(j.Payload); reqID != "" {
+			execCtx = actorctx.WithRequestID(execCtx, reqID)
+		}
 		if j.UserID != nil && *j.UserID != "" {
 			execCtx = actorctx.WithUserID(execCtx, *j.UserID)
 		}
 
+		reqID := requestIDFromContext(execCtx)
+
 		// Start span for this job
+		spanAttrs := []attribute.KeyValue{
+			attribute.String("job.id", j.ID),
+			attribute.String("job.type", j.Type),
+			attribute.Int("job.attempts", j.Attempts),
+			attribute.Int("job.max_attempts", j.MaxAttempts),
+			attribute.String("worker.id", w.cfg.WorkerID),
+			attribute.Int("worker.num", workerNum),
+		}
+		if reqID != "" {
+			spanAttrs = append(spanAttrs, attribute.String("request.id", reqID))
+		}
+
 		execCtx, span := tracer.Start(execCtx, "job.run",
 			trace.WithAttributes(
-				attribute.String("job.id", j.ID),
-				attribute.String("job.type", j.Type),
-				attribute.Int("job.attempts", j.Attempts),
-				attribute.Int("job.max_attempts", j.MaxAttempts),
-				attribute.String("worker.id", w.cfg.WorkerID),
-				attribute.Int("worker.num", workerNum),
+				spanAttrs...,
 			),
 		)
 
@@ -280,6 +313,7 @@ func (w *Worker) runWorker(ctx context.Context, workerNum int, jobsChan <-chan j
 				"worker_id", w.cfg.WorkerID,
 				"job_id", j.ID,
 				"job_type", j.Type,
+				"request_id", reqID,
 				"user_id", optional(j.UserID),
 				"attempts", fmt.Sprintf("%d/%d", j.Attempts, j.MaxAttempts),
 			)
@@ -310,6 +344,7 @@ func (w *Worker) runWorker(ctx context.Context, workerNum int, jobsChan <-chan j
 					"worker_id", w.cfg.WorkerID,
 					"job_id", j.ID,
 					"job_type", j.Type,
+					"request_id", reqID,
 					"duration_ms", d.Milliseconds(),
 					"err", err,
 				)
@@ -337,6 +372,7 @@ func (w *Worker) runWorker(ctx context.Context, workerNum int, jobsChan <-chan j
 					"worker_id", w.cfg.WorkerID,
 					"job_id", j.ID,
 					"job_type", j.Type,
+					"request_id", reqID,
 					"duration_ms", d.Milliseconds(),
 					"err", err,
 				)
@@ -363,6 +399,7 @@ func (w *Worker) runWorker(ctx context.Context, workerNum int, jobsChan <-chan j
 				"worker_id", w.cfg.WorkerID,
 				"job_id", j.ID,
 				"job_type", j.Type,
+				"request_id", reqID,
 				"user_id", optional(j.UserID),
 				"duration_ms", d.Milliseconds(),
 			)
@@ -481,6 +518,7 @@ func (w *Worker) execute(ctx context.Context, j job.Job) error {
 
 func (w *Worker) handleFailure(ctx context.Context, j job.Job, execError error) {
 	errMsg := execError.Error()
+	reqID := requestIDFromContext(ctx)
 
 	// How many attempts will this failure represent?
 	nextAttempt := j.Attempts + 1
@@ -492,7 +530,11 @@ func (w *Worker) handleFailure(ctx context.Context, j job.Job, execError error) 
 		runAt := time.Now().UTC().Add(delay)
 
 		if err := w.repo.Reschedule(ctx, j.ID, runAt, errMsg); err != nil {
-			log.Printf("reschedule error job=%s: %v", j.ID, err)
+			slog.Default().ErrorContext(ctx, "job.reschedule_failed",
+				"job_id", j.ID,
+				"request_id", reqID,
+				"err", err,
+			)
 			_ = w.repo.MarkFailed(ctx, j.ID, "reschedule_failed: "+errMsg)
 			return
 		}
@@ -501,14 +543,24 @@ func (w *Worker) handleFailure(ctx context.Context, j job.Job, execError error) 
 			w.metrics.IncRetried()
 		}
 
-		log.Printf("job retry scheduled job=%s attempt=%d/%d next_run=%s err=%s",
-			j.ID, nextAttempt, j.MaxAttempts, runAt.Format(time.RFC3339), errMsg)
+		slog.Default().InfoContext(ctx, "job.retry_scheduled",
+			"job_id", j.ID,
+			"request_id", reqID,
+			"attempt", nextAttempt,
+			"max_attempts", j.MaxAttempts,
+			"next_run", runAt.Format(time.RFC3339),
+			"err", errMsg,
+		)
 		return
 	}
 
 	// Otherwise dead-letter it (status=failed + last_error)``
 	if err := w.repo.MarkFailed(ctx, j.ID, errMsg); err != nil {
-		log.Printf("mark failed error job=%s: %v", j.ID, err)
+		slog.Default().ErrorContext(ctx, "job.mark_failed_write_failed",
+			"job_id", j.ID,
+			"request_id", reqID,
+			"err", err,
+		)
 		return
 	}
 
@@ -516,7 +568,12 @@ func (w *Worker) handleFailure(ctx context.Context, j job.Job, execError error) 
 		w.metrics.IncDeadLettered()
 	}
 
-	log.Printf("job dead-lettered job=%s attempts=%d/%d err=%s",
-		j.ID, nextAttempt, j.MaxAttempts, errMsg)
+	slog.Default().WarnContext(ctx, "job.dead_lettered",
+		"job_id", j.ID,
+		"request_id", reqID,
+		"attempt", nextAttempt,
+		"max_attempts", j.MaxAttempts,
+		"err", errMsg,
+	)
 
 }

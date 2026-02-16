@@ -20,6 +20,8 @@ type EventsRepo struct {
 	prom *observability.Prom
 }
 
+const eventsSearchVectorExpr = "to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,'') || ' ' || coalesce(city,''))"
+
 func (repo *EventsRepo) observe(op string, fn func() error) error {
 	if repo.prom != nil {
 		return repo.prom.ObserveDB(op, fn)
@@ -100,6 +102,14 @@ func (r *EventsRepo) List(ctx context.Context, filteredEvents event.ListEventsFi
 		args = append(args, *filteredEvents.To)
 		argsPosition++
 	}
+	if filteredEvents.Query != nil {
+		q := strings.TrimSpace(*filteredEvents.Query)
+		if q != "" {
+			conds = append(conds, fmt.Sprintf("%s @@ websearch_to_tsquery('simple', $%d)", eventsSearchVectorExpr, argsPosition))
+			args = append(args, q)
+			argsPosition++
+		}
+	}
 
 	query := baseQuery
 
@@ -168,6 +178,14 @@ func (r *EventsRepo) Count(ctx context.Context, filteredEvents event.ListEventsF
 	if filteredEvents.To != nil {
 		conds = append(conds, fmt.Sprintf("start_at <= $%d", argsPos))
 		args = append(args, *filteredEvents.To)
+		argsPos++
+	}
+	if filteredEvents.Query != nil {
+		q := strings.TrimSpace(*filteredEvents.Query)
+		if q != "" {
+			conds = append(conds, fmt.Sprintf("%s @@ websearch_to_tsquery('simple', $%d)", eventsSearchVectorExpr, argsPos))
+			args = append(args, q)
+		}
 	}
 
 	q := "SELECT COUNT(*) FROM events"
@@ -211,6 +229,14 @@ func (r *EventsRepo) ListCursor(
 		conds = append(conds, fmt.Sprintf("start_at <= $%d", argsPos))
 		args = append(args, *filteredEvents.To)
 		argsPos++
+	}
+	if filteredEvents.Query != nil {
+		q := strings.TrimSpace(*filteredEvents.Query)
+		if q != "" {
+			conds = append(conds, fmt.Sprintf("%s @@ websearch_to_tsquery('simple', $%d)", eventsSearchVectorExpr, argsPos))
+			args = append(args, q)
+			argsPos++
+		}
 	}
 
 	// keyset condition

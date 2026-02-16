@@ -210,13 +210,20 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/City"
+        - $ref: "#/components/parameters/SearchQuery"
         - $ref: "#/components/parameters/From"
         - $ref: "#/components/parameters/To"
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/IncludeTotal"
+        - $ref: "#/components/parameters/IfNoneMatch"
       responses:
         "200":
           description: Events page
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Entity tag for conditional requests.
           content:
             application/json:
               schema:
@@ -246,6 +253,8 @@ paths:
                 total: null
         "400":
           $ref: "#/components/responses/Error"
+        "304":
+          description: Not Modified (matched `If-None-Match`)
         "500":
           $ref: "#/components/responses/Error"
 
@@ -256,9 +265,15 @@ paths:
       operationId: getEvent
       parameters:
         - $ref: "#/components/parameters/EventID"
+        - $ref: "#/components/parameters/IfNoneMatch"
       responses:
         "200":
           description: Event details
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Entity tag for conditional requests.
           content:
             application/json:
               schema:
@@ -274,6 +289,8 @@ paths:
                 updatedAt: 2026-02-01T12:00:00Z
         "400":
           $ref: "#/components/responses/Error"
+        "304":
+          description: Not Modified (matched `If-None-Match`)
         "404":
           $ref: "#/components/responses/Error"
         "500":
@@ -339,15 +356,23 @@ paths:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/IncludeTotal"
+        - $ref: "#/components/parameters/IfNoneMatch"
       responses:
         "200":
           description: Registration page
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Entity tag for conditional requests.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/RegistrationListResponse"
         "400":
           $ref: "#/components/responses/Error"
+        "304":
+          description: Not Modified (matched `If-None-Match`)
         "401":
           $ref: "#/components/responses/Error"
         "500":
@@ -528,15 +553,23 @@ paths:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/JobStatus"
+        - $ref: "#/components/parameters/IfNoneMatch"
       responses:
         "200":
           description: Jobs page
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Entity tag for conditional requests.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/JobsListResponse"
         "400":
           $ref: "#/components/responses/Error"
+        "304":
+          description: Not Modified (matched `If-None-Match`)
         "401":
           $ref: "#/components/responses/Error"
         "403":
@@ -553,15 +586,23 @@ paths:
         - bearerAuth: []
       parameters:
         - $ref: "#/components/parameters/JobID"
+        - $ref: "#/components/parameters/IfNoneMatch"
       responses:
         "200":
           description: Job details
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Entity tag for conditional requests.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Job"
         "400":
           $ref: "#/components/responses/Error"
+        "304":
+          description: Not Modified (matched `If-None-Match`)
         "401":
           $ref: "#/components/responses/Error"
         "403":
@@ -714,10 +755,24 @@ components:
       schema:
         type: boolean
         default: false
+    IfNoneMatch:
+      in: header
+      name: If-None-Match
+      required: false
+      description: Revalidate a cached representation using an ETag value.
+      schema:
+        type: string
     City:
       in: query
       name: city
       required: false
+      schema:
+        type: string
+    SearchQuery:
+      in: query
+      name: q
+      required: false
+      description: Full-text search across event `title`, `description`, and `city`.
       schema:
         type: string
     From:
@@ -766,6 +821,21 @@ components:
                   code: invalid_request
                   message: Invalid request body
                   requestId: 4bca7777d14b4b1a
+            validation:
+              value:
+                error:
+                  code: invalid_request
+                  message: Invalid request body
+                  requestId: 4bca7777d14b4b1a
+                  details:
+                    fields:
+                      - field: title
+                        rule: min
+                        param: "3"
+                        message: must be at least 3
+                      - field: startAt
+                        rule: required
+                        message: is required
 
   schemas:
     ErrorResponse:

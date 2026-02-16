@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -66,12 +67,14 @@ func (h *JobsHandler) PublishEvent(ctx *gin.Context) {
 
 	if !ok || userID == "" {
 		RespondUnAuthorized(ctx, "unauthorized", "Missing identity")
+		return
 	}
 
 	payload := jobs.EventPublishPayload{
 		EventID:     eventID,
 		RequestedBy: userID,
 		RequestedAt: time.Now().UTC(),
+		RequestID:   requestIDFrom(ctx),
 	}
 
 	raw, err := payload.ToJSONRaw()
@@ -92,6 +95,7 @@ func (h *JobsHandler) PublishEvent(ctx *gin.Context) {
 		RunAt:          runAt,
 		MaxAttempts:    25,
 		IdempotencyKey: &key,
+		UserID:         &userID,
 	})
 
 	if err != nil {
@@ -108,6 +112,13 @@ func (h *JobsHandler) PublishEvent(ctx *gin.Context) {
 				"type":            existing.Type,
 				"alreadyEnqueued": true,
 			})
+			ctx.Set(middlewares.CtxJobID, existing.ID)
+			slog.Default().InfoContext(cctx, "job.enqueue",
+				"request_id", requestIDFrom(ctx),
+				"job_id", existing.ID,
+				"job_type", existing.Type,
+				"already_enqueued", true,
+			)
 
 			return
 
@@ -122,5 +133,12 @@ func (h *JobsHandler) PublishEvent(ctx *gin.Context) {
 		"status": j.Status,
 		"type":   j.Type,
 	})
+	ctx.Set(middlewares.CtxJobID, j.ID)
+	slog.Default().InfoContext(cctx, "job.enqueue",
+		"request_id", requestIDFrom(ctx),
+		"job_id", j.ID,
+		"job_type", j.Type,
+		"already_enqueued", false,
+	)
 
 }

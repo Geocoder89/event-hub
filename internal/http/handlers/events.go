@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/geocoder89/eventhub/internal/cache"
@@ -99,6 +100,11 @@ func (h *EventsHandler) ListEvents(ctx *gin.Context) {
 		cityPtr = &city
 	}
 
+	var queryPtr *string
+	if q := strings.TrimSpace(ctx.Query("q")); q != "" {
+		queryPtr = &q
+	}
+
 	var fromPtr, toPtr *time.Time
 	if fromStr := ctx.Query("from"); fromStr != "" {
 		t, err := time.Parse(time.RFC3339, fromStr)
@@ -121,6 +127,7 @@ func (h *EventsHandler) ListEvents(ctx *gin.Context) {
 		City:  cityPtr,
 		From:  fromPtr,
 		To:    toPtr,
+		Query: queryPtr,
 		Limit: limit,
 	}
 
@@ -146,13 +153,13 @@ func (h *EventsHandler) ListEvents(ctx *gin.Context) {
 	cacheKey := ""
 
 	if cacheable {
-		cacheKey = utils.BuildEventsListCacheKey(limit, cityPtr, fromPtr, toPtr)
+		cacheKey = utils.BuildEventsListCacheKey(limit, cityPtr, fromPtr, toPtr, queryPtr)
 
 		v, ok := h.cache.Get(cacheKey)
 
 		if ok {
 			slog.Info("events.list.cache_hit", "key", cacheKey)
-			ctx.JSON(http.StatusOK, v)
+			RespondJSONWithETag(ctx, http.StatusOK, v)
 			return
 		}
 		slog.Info("events.list.cache_miss", "key", cacheKey)
@@ -190,7 +197,7 @@ func (h *EventsHandler) ListEvents(ctx *gin.Context) {
 		h.cache.Set(cacheKey, resp)
 	}
 
-	ctx.JSON(http.StatusOK, resp)
+	RespondJSONWithETag(ctx, http.StatusOK, resp)
 }
 
 func (h *EventsHandler) GetEventById(c *gin.Context) {
@@ -217,7 +224,7 @@ func (h *EventsHandler) GetEventById(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, e)
+	RespondJSONWithETag(c, http.StatusOK, e)
 }
 
 func (h *EventsHandler) UpdateEvent(ctx *gin.Context) {

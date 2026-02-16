@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 
+	"github.com/geocoder89/eventhub/internal/http/middlewares"
 	"github.com/gin-gonic/gin"
 )
 
@@ -14,8 +15,17 @@ type APIError struct {
 }
 
 func requestIDFrom(ctx *gin.Context) string {
-	v, ok := ctx.Get("request_id")
+	v, ok := ctx.Get(middlewares.CtxRequestID)
 
+	if ok {
+		s, ok := v.(string)
+		if ok && s != "" {
+			return s
+		}
+	}
+
+	// backward compatibility for any legacy context set/get usage
+	v, ok = ctx.Get("request_id")
 	if ok {
 		s, ok := v.(string)
 		if ok && s != "" {

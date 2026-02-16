@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -110,6 +111,7 @@ func (h *RegistrationHandler) Register(ctx *gin.Context) {
 		Email:          reg.Email,
 		Name:           reg.Name,
 		RequestedAt:    time.Now().UTC(),
+		RequestID:      requestIDFrom(ctx),
 	}
 
 	raw, err := payload.JSON()
@@ -126,7 +128,7 @@ func (h *RegistrationHandler) Register(ctx *gin.Context) {
 	//capture userID as a variable so we can take its address
 	uid := userID
 
-	_, err = h.jobsRepo.CreateTx(cctx, tx, job.CreateRequest{
+	createdJob, err := h.jobsRepo.CreateTx(cctx, tx, job.CreateRequest{
 		Type:           jobs.TypeRegistrationConfirmation,
 		Payload:        raw,
 		RunAt:          time.Now().UTC(),
@@ -149,6 +151,15 @@ func (h *RegistrationHandler) Register(ctx *gin.Context) {
 		RespondInternal(ctx, "Could not register for event")
 		fmt.Println(err)
 		return
+	}
+	if createdJob.ID != "" {
+		ctx.Set(middlewares.CtxJobID, createdJob.ID)
+		slog.Default().InfoContext(cctx, "job.enqueue",
+			"request_id", requestIDFrom(ctx),
+			"job_id", createdJob.ID,
+			"job_type", createdJob.Type,
+			"already_enqueued", false,
+		)
 	}
 	ctx.JSON(http.StatusCreated, reg)
 }
@@ -205,14 +216,16 @@ func (h *RegistrationHandler) ListForEvent(ctx *gin.Context) {
 		total = t
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{
+	resp := gin.H{
 		"limit":      limit,
 		"count":      len(items),
 		"items":      items,
 		"hasMore":    hasMore,
 		"nextCursor": next,
 		"total":      total,
-	})
+	}
+
+	RespondJSONWithETag(ctx, http.StatusOK, resp)
 }
 
 func (h *RegistrationHandler) Cancel(ctx *gin.Context) {

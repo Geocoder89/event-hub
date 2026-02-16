@@ -13,6 +13,7 @@ type RegistrationConfirmationPayload struct {
 	Email          string    `json:"email"`
 	Name           string    `json:"name"`
 	RequestedAt    time.Time `json:"requestedAt"`
+	RequestID      string    `json:"requestId,omitempty"`
 }
 
 func (p RegistrationConfirmationPayload) JSON() (json.RawMessage, error) {

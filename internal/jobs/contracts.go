@@ -13,6 +13,7 @@ type EventPublishPayload struct {
 	EventID     string    `json:"eventId"`
 	RequestedBy string    `json:"requestedBy"`
 	RequestedAt time.Time `json:"requestedAt"`
+	RequestID   string    `json:"requestId,omitempty"`
 }
 
 // Helper to convert payload to json.RawMessage

@@ -21,6 +21,7 @@ type ListEventsFilter struct {
 	City   *string
 	From   *time.Time
 	To     *time.Time
+	Query  *string
 	Limit  int
 	Offset int
 }

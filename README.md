@@ -114,7 +114,7 @@ CRUD + filtering for events:
 - `GET /events`
   - List events with:
     - Pagination: `page`, `limit`
-    - Optional filters: `city`, `from`, `to` (RFC3339)
+    - Optional filters: `city`, `q` (full-text), `from`, `to` (RFC3339)
 - `GET /events/:id`
   - Fetch a single event by ID.
 - `PUT /events/:id`
@@ -128,6 +128,9 @@ Implementation details:
 - Postgres repository in `internal/repo/postgres`.
 - Versioned migrations for the `events` table via Goose.
 - Standardized JSON error responses across handlers.
+
+FTS indexing and query-plan notes:
+- `/Users/oladelemoarukhe/Documents/codes/event-hub/eventhub/perf/day68/README.md`
 
 ### Registrations API
 

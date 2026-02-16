@@ -255,6 +255,32 @@ func TestListEventsHandler(t *testing.T) {
 			wantStatusCode: http.StatusOK,
 			wantCount:      1,
 		},
+		{
+			name: "success_with_search_query",
+			url:  "/events?limit=20&q=backend+go",
+			repoSetup: func(f *fakeEventsRepo) {
+				f.listCursorFn = func(ctx context.Context, filters event.ListEventsFilter, afterStartAt time.Time, afterID string) ([]event.Event, *string, bool, error) {
+					if filters.Query == nil || *filters.Query != "backend go" {
+						return nil, nil, false, errors.New("query filter not passed")
+					}
+
+					return []event.Event{
+						{
+							ID:          "id-search-1",
+							Title:       "Go Backend Deep Dive",
+							Description: "Search test",
+							City:        "Lagos",
+							StartAt:     now,
+							Capacity:    80,
+							CreatedAt:   now,
+							UpdatedAt:   now,
+						},
+					}, nil, false, nil
+				}
+			},
+			wantStatusCode: http.StatusOK,
+			wantCount:      1,
+		},
 
 		{
 			name: "success_with_valid_cursor",
@@ -667,5 +693,120 @@ func TestListEventsHandler_CacheHit(t *testing.T) {
 
 	if calls != 1 {
 		t.Fatalf("expected repo calls=1, got %d", calls)
+	}
+}
+
+func TestListEventsHandler_ETagNotModified(t *testing.T) {
+	now := time.Now().UTC()
+	const zeroUUID = "00000000-0000-0000-0000-000000000000"
+
+	fakeRepo := &fakeEventsRepo{}
+	c := cache.New(30 * time.Second)
+	calls := 0
+
+	fakeRepo.listCursorFn = func(ctx context.Context, filters event.ListEventsFilter, afterStartAt time.Time, afterID string) ([]event.Event, *string, bool, error) {
+		calls++
+		if !afterStartAt.Equal(time.Unix(0, 0).UTC()) {
+			return nil, nil, false, errors.New("afterStartAt not epoch")
+		}
+		if afterID != zeroUUID {
+			return nil, nil, false, errors.New("afterID not zero uuid")
+		}
+
+		return []event.Event{
+			{ID: "id-1", Title: "Event 1", City: "Toronto", StartAt: now, CreatedAt: now, UpdatedAt: now},
+		}, nil, false, nil
+	}
+
+	h := handlers.NewEventsHandlerWithCache(fakeRepo, c)
+	r := setupRouter(http.MethodGet, "/events", h.ListEvents)
+
+	w1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest(http.MethodGet, "/events?limit=20", nil)
+	r.ServeHTTP(w1, req1)
+
+	if w1.Code != http.StatusOK {
+		t.Fatalf("first call got %d body=%s", w1.Code, w1.Body.String())
+	}
+
+	etag := w1.Header().Get("ETag")
+	if etag == "" {
+		t.Fatalf("expected ETag header in first response")
+	}
+
+	w2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/events?limit=20", nil)
+	req2.Header.Set("If-None-Match", etag)
+	r.ServeHTTP(w2, req2)
+
+	if w2.Code != http.StatusNotModified {
+		t.Fatalf("second call got %d, want %d, body=%s", w2.Code, http.StatusNotModified, w2.Body.String())
+	}
+
+	if w2.Body.Len() != 0 {
+		t.Fatalf("expected empty body for 304, got %q", w2.Body.String())
+	}
+
+	if got := w2.Header().Get("ETag"); got == "" {
+		t.Fatalf("expected ETag header in 304 response")
+	}
+
+	if calls != 1 {
+		t.Fatalf("expected repo calls=1 due cache hit, got %d", calls)
+	}
+}
+
+func TestGetEventByIDHandler_ETagNotModified(t *testing.T) {
+	now := time.Now().UTC()
+	validID := newUUID()
+
+	fakeRepo := &fakeEventsRepo{}
+	calls := 0
+
+	fakeRepo.getFn = func(ctx context.Context, id string) (event.Event, error) {
+		calls++
+		return event.Event{
+			ID:          id,
+			Title:       "Event-1",
+			Description: "Desc",
+			City:        "Toronto",
+			StartAt:     now,
+			Capacity:    10,
+			CreatedAt:   now.Add(-time.Hour),
+			UpdatedAt:   now,
+		}, nil
+	}
+
+	h := handlers.NewEventsHandler(fakeRepo)
+	r := setupRouter(http.MethodGet, "/events/:id", h.GetEventById)
+
+	w1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest(http.MethodGet, "/events/"+validID, nil)
+	r.ServeHTTP(w1, req1)
+
+	if w1.Code != http.StatusOK {
+		t.Fatalf("first call got %d body=%s", w1.Code, w1.Body.String())
+	}
+
+	etag := w1.Header().Get("ETag")
+	if etag == "" {
+		t.Fatalf("expected ETag header in first response")
+	}
+
+	w2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/events/"+validID, nil)
+	req2.Header.Set("If-None-Match", etag)
+	r.ServeHTTP(w2, req2)
+
+	if w2.Code != http.StatusNotModified {
+		t.Fatalf("second call got %d, want %d, body=%s", w2.Code, http.StatusNotModified, w2.Body.String())
+	}
+
+	if w2.Body.Len() != 0 {
+		t.Fatalf("expected empty body for 304, got %q", w2.Body.String())
+	}
+
+	if calls != 2 {
+		t.Fatalf("expected repo to be called on each lookup, got %d calls", calls)
 	}
 }

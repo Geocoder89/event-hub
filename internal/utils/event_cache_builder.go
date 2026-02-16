@@ -6,10 +6,14 @@ import (
 	"time"
 )
 
-func BuildEventsListCacheKey(limit int, city *string, from, to *time.Time) string {
+func BuildEventsListCacheKey(limit int, city *string, from, to *time.Time, query *string) string {
 	c := ""
 	if city != nil {
 		c = strings.ToLower(strings.TrimSpace(*city))
+	}
+	q := ""
+	if query != nil {
+		q = strings.ToLower(strings.TrimSpace(*query))
 	}
 	f := ""
 	if from != nil {
@@ -20,8 +24,9 @@ func BuildEventsListCacheKey(limit int, city *string, from, to *time.Time) strin
 		t = to.UTC().Format(time.RFC3339Nano)
 	}
 
-	return "events:list:v1:limit=" + strconv.Itoa(limit) +
+	return "events:list:v2:limit=" + strconv.Itoa(limit) +
 		":city=" + c +
 		":from=" + f +
-		":to=" + t
+		":to=" + t +
+		":q=" + q
 }

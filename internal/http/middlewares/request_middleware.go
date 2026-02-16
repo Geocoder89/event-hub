@@ -22,7 +22,8 @@ func RequestID() gin.HandlerFunc {
 		//
 		ctx.Writer.Header().Set(requestIDHeader, id)
 
-		ctx.Set("request_id", id)
+		ctx.Set(CtxRequestID, id)
+		ctx.Set("request_id", id) // legacy compatibility for older handlers/helpers
 
 		ctx.Next()
 
@@ -45,16 +46,22 @@ func RequestLogger() gin.HandlerFunc {
 		lat := time.Since(start)
 		status := ctx.Writer.Status()
 
-		reqID, _ := ctx.Get("request_id")
+		reqID, _ := ctx.Get(CtxRequestID)
 
-		slog.Default().InfoContext(
-			ctx.Request.Context(),
-			"http_request",
+		logAttrs := []any{
 			"method", method,
 			"route", route,
 			"status", status,
 			"latency_ms", lat.Milliseconds(),
 			"request_id", reqID,
-		)
+		}
+
+		if jobID, ok := ctx.Get(CtxJobID); ok {
+			if jobIDStr, ok := jobID.(string); ok && jobIDStr != "" {
+				logAttrs = append(logAttrs, "job_id", jobIDStr)
+			}
+		}
+
+		slog.Default().InfoContext(ctx.Request.Context(), "http_request", logAttrs...)
 	}
 }

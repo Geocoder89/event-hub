@@ -9,6 +9,7 @@ import (
 
 	"github.com/geocoder89/eventhub/internal/config"
 	"github.com/geocoder89/eventhub/internal/domain/job"
+	"github.com/geocoder89/eventhub/internal/http/middlewares"
 	"github.com/geocoder89/eventhub/internal/repo/postgres"
 	"github.com/geocoder89/eventhub/internal/utils"
 	"github.com/gin-gonic/gin"
@@ -90,19 +91,22 @@ func (h *AdminJobsHandler) List(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{
+	resp := gin.H{
 		"limit":      limit,
 		"count":      len(items),
 		"items":      items,
 		"hasMore":    hasMore,
 		"nextCursor": next,
-	})
+	}
+
+	RespondJSONWithETag(ctx, http.StatusOK, resp)
 }
 
 // Get /admin/jobs/:id
 
 func (h *AdminJobsHandler) GetByID(ctx *gin.Context) {
 	id := ctx.Param("id")
+	ctx.Set(middlewares.CtxJobID, id)
 
 	if !utils.IsUUID(id) {
 		RespondBadRequest(ctx, "invalid_request", "invalid_id")
@@ -124,12 +128,13 @@ func (h *AdminJobsHandler) GetByID(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, j)
+	RespondJSONWithETag(ctx, http.StatusOK, j)
 }
 
 // POST /admin/jobs/:id/retry
 func (h *AdminJobsHandler) Retry(ctx *gin.Context) {
 	id := ctx.Param("id")
+	ctx.Set(middlewares.CtxJobID, id)
 	if !utils.IsUUID(id) {
 		RespondBadRequest(ctx, "invalid_request", "invalid_id")
 		return

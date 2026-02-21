@@ -14,6 +14,8 @@ func NewFromCreateRequest(req CreateEventRequest) Event {
 		Title:       req.Title,
 		Description: req.Description,
 		City:        req.City,
+		Category:    req.Category,
+		Tags:        req.Tags,
 		StartAt:     req.StartAt,
 		Capacity:    req.Capacity,
 		CreatedAt:   now,

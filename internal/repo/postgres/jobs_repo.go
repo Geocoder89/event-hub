@@ -447,6 +447,28 @@ func (r *JobsRepo) ListCursor(
 	return out, nextCursor, hasMore, nil
 }
 
+func (r *JobsRepo) Count(ctx context.Context, status *string) (int, error) {
+	op := "jobs.admin.count"
+
+	q := "SELECT COUNT(*) FROM jobs"
+	args := make([]any, 0, 1)
+
+	if status != nil {
+		q += " WHERE status = $1"
+		args = append(args, *status)
+	}
+
+	var total int
+	err := r.observe(op, func() error {
+		return r.pool.QueryRow(ctx, q, args...).Scan(&total)
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	return total, nil
+}
+
 func (r *JobsRepo) GetByID(ctx context.Context, id string) (job.Job, error) {
 	var j job.Job
 	var status string

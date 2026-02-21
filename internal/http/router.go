@@ -96,6 +96,7 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 	usersRepo := postgres.NewUsersRepo(pool)
 	refreshTokensRepo := postgres.NewRefreshTokensRepo(pool)
 	jobsRepo := postgres.NewJobsRepo(pool, prom)
+	adminActionAuditsRepo := postgres.NewAdminActionAuditsRepo(pool)
 
 	// events cache
 	eventsCache := cache.New(10 * time.Second)
@@ -156,6 +157,7 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 
 	admin := authed.Group("/admin")
 	admin.Use(authMiddleware.RequireRole("admin"))
+	admin.Use(middlewares.AdminAudit(adminActionAuditsRepo))
 
 	{
 		// admin ops endpoints
@@ -168,6 +170,8 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 		admin.POST("/events", eventsHandler.CreateEvent)
 		admin.PUT("/events/:id", eventsHandler.UpdateEvent)
 		admin.DELETE("/events/:id", eventsHandler.DeleteEvent)
+		admin.POST("/events/:id/restore", eventsHandler.RestoreEvent)
+		admin.POST("/events/:id/registrations/check-in", registrationHandler.CheckIn)
 		admin.POST("/events/:id/publish", jobsHandler.PublishEvent)
 	}
 

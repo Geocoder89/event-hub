@@ -68,6 +68,7 @@ func (repo *RegistrationRepo) CreateTx(ctx context.Context, tx pgx.Tx, req regis
 			(SELECT COUNT(*) FROM registrations r WHERE r.event_id = e.id) AS current
 		FROM events e
 		WHERE e.id = $1
+		  AND e.deleted_at IS NULL
 		FOR UPDATE
 	`, req.EventID).Scan(&capacity, &current)
 	})
@@ -89,9 +90,9 @@ func (repo *RegistrationRepo) CreateTx(ctx context.Context, tx pgx.Tx, req regis
 
 	err = repo.observe("registrations.create_tx.insert", func() error {
 		_, e := tx.Exec(ctx, `
-		INSERT INTO registrations (id, event_id, user_id, name, email, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)
-	`, reg.ID, reg.EventID, reg.UserID, reg.Name, reg.Email, reg.CreatedAt, reg.UpdatedAt)
+		INSERT INTO registrations (id, event_id, user_id, name, email, check_in_token, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+	`, reg.ID, reg.EventID, reg.UserID, reg.Name, reg.Email, reg.CheckInToken, reg.CreatedAt, reg.UpdatedAt)
 		return e
 	})
 
@@ -163,10 +164,12 @@ func (repo *RegistrationRepo) ListByEvent(ctx context.Context, eventID string) (
 	err = repo.observe("registrations.list_by_event", func() error {
 		rows, err = repo.pool.Query(ctx,
 			`
-	SELECT id, event_id,user_id,name, email, created_at,updated_at
-	FROM registrations
-	WHERE event_id = $1
-	ORDER BY created_at ASC, id ASC
+	SELECT r.id, r.event_id, r.user_id, r.name, r.email, r.check_in_token, r.checked_in_at, r.created_at, r.updated_at
+	FROM registrations r
+	JOIN events e ON e.id = r.event_id
+	WHERE r.event_id = $1
+	  AND e.deleted_at IS NULL
+	ORDER BY r.created_at ASC, r.id ASC
 	`,
 			eventID,
 		)
@@ -184,7 +187,7 @@ func (repo *RegistrationRepo) ListByEvent(ctx context.Context, eventID string) (
 	for rows.Next() {
 		var r registration.Registration
 
-		e := rows.Scan(&r.ID, &r.EventID, &r.UserID, &r.Name, &r.Email, &r.CreatedAt, &r.UpdatedAt)
+		e := rows.Scan(&r.ID, &r.EventID, &r.UserID, &r.Name, &r.Email, &r.CheckInToken, &r.CheckedInAt, &r.CreatedAt, &r.UpdatedAt)
 
 		if e != nil {
 			err = e
@@ -210,7 +213,7 @@ func (repo *RegistrationRepo) ListByEvent(ctx context.Context, eventID string) (
 		var dummy string
 
 		err = repo.observe("registrations.list_by_event.check_event_exists", func() error {
-			return repo.pool.QueryRow(ctx, `SELECT id FROM events WHERE id = $1`, eventID).Scan(&dummy)
+			return repo.pool.QueryRow(ctx, `SELECT id FROM events WHERE id = $1 AND deleted_at IS NULL`, eventID).Scan(&dummy)
 		})
 
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -231,7 +234,13 @@ func (repo *RegistrationRepo) CountForEvent(ctx context.Context, eventID string)
 	op := "registrations.count_for_event"
 	var total int
 	err := repo.observe(op, func() error {
-		return repo.pool.QueryRow(ctx, `SELECT COUNT(*) FROM registrations WHERE event_id = $1`, eventID).Scan(&total)
+		return repo.pool.QueryRow(ctx, `
+			SELECT COUNT(*)
+			FROM registrations r
+			JOIN events e ON e.id = r.event_id
+			WHERE r.event_id = $1
+			  AND e.deleted_at IS NULL
+		`, eventID).Scan(&total)
 	})
 	return total, err
 }
@@ -246,11 +255,13 @@ func (repo *RegistrationRepo) ListByEventCursor(
 	op := "registrations.list_by_event_cursor"
 
 	q := `
-		SELECT id, event_id, user_id, name, email, created_at, updated_at
-		FROM registrations
-		WHERE event_id = $1
-		  AND (created_at, id) > ($2, $3)
-		ORDER BY created_at ASC, id ASC
+		SELECT r.id, r.event_id, r.user_id, r.name, r.email, r.check_in_token, r.checked_in_at, r.created_at, r.updated_at
+		FROM registrations r
+		JOIN events e ON e.id = r.event_id
+		WHERE r.event_id = $1
+		  AND e.deleted_at IS NULL
+		  AND (r.created_at, r.id) > ($2, $3)
+		ORDER BY r.created_at ASC, r.id ASC
 		LIMIT $4
 	`
 	limitPlusOne := limit + 1
@@ -270,7 +281,7 @@ func (repo *RegistrationRepo) ListByEventCursor(
 
 	for rows.Next() {
 		var r registration.Registration
-		if scanErr := rows.Scan(&r.ID, &r.EventID, &r.UserID, &r.Name, &r.Email, &r.CreatedAt, &r.UpdatedAt); scanErr != nil {
+		if scanErr := rows.Scan(&r.ID, &r.EventID, &r.UserID, &r.Name, &r.Email, &r.CheckInToken, &r.CheckedInAt, &r.CreatedAt, &r.UpdatedAt); scanErr != nil {
 			return nil, nil, false, scanErr
 		}
 		out = append(out, r)
@@ -298,12 +309,12 @@ func (repo *RegistrationRepo) GetByID(ctx context.Context, eventID, registration
 	err := repo.observe("registrations.get_by_id", func() error {
 		return repo.pool.QueryRow(ctx,
 			`
-		SELECT id, event_id, user_id, name, email, created_at, updated_at
+		SELECT id, event_id, user_id, name, email, check_in_token, checked_in_at, created_at, updated_at
 		FROM registrations
 		WHERE id = $1 AND event_id = $2
 		`,
 			registrationID, eventID,
-		).Scan(&r.ID, &r.EventID, &r.UserID, &r.Name, &r.Email, &r.CreatedAt, &r.UpdatedAt)
+		).Scan(&r.ID, &r.EventID, &r.UserID, &r.Name, &r.Email, &r.CheckInToken, &r.CheckedInAt, &r.CreatedAt, &r.UpdatedAt)
 	})
 
 	if err != nil {
@@ -344,4 +355,62 @@ func (repo *RegistrationRepo) Delete(ctx context.Context, eventID, registrationI
 	}
 
 	return
+}
+
+func (repo *RegistrationRepo) CheckInByToken(ctx context.Context, eventID, token string) (registration.Registration, error) {
+	op := "registrations.check_in_by_token"
+
+	var r registration.Registration
+	now := time.Now().UTC()
+
+	err := repo.observe(op, func() error {
+		return repo.pool.QueryRow(ctx, `
+			UPDATE registrations
+			SET checked_in_at = $3,
+			    updated_at = $3
+			WHERE event_id = $1
+			  AND check_in_token = $2
+			  AND checked_in_at IS NULL
+			RETURNING id, event_id, user_id, name, email, check_in_token, checked_in_at, created_at, updated_at
+		`, eventID, token, now).Scan(
+			&r.ID,
+			&r.EventID,
+			&r.UserID,
+			&r.Name,
+			&r.Email,
+			&r.CheckInToken,
+			&r.CheckedInAt,
+			&r.CreatedAt,
+			&r.UpdatedAt,
+		)
+	})
+	if err == nil {
+		return r, nil
+	}
+
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return registration.Registration{}, err
+	}
+
+	var alreadyCheckedIn bool
+	err = repo.observe(op+".exists_checked", func() error {
+		return repo.pool.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM registrations
+				WHERE event_id = $1
+				  AND check_in_token = $2
+				  AND checked_in_at IS NOT NULL
+			)
+		`, eventID, token).Scan(&alreadyCheckedIn)
+	})
+	if err != nil {
+		return registration.Registration{}, err
+	}
+
+	if alreadyCheckedIn {
+		return registration.Registration{}, registration.ErrAlreadyCheckedIn
+	}
+
+	return registration.Registration{}, registration.ErrNotFound
 }

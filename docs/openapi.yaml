@@ -210,6 +210,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/City"
+        - $ref: "#/components/parameters/CategoryFilter"
+        - $ref: "#/components/parameters/TagFilter"
         - $ref: "#/components/parameters/SearchQuery"
         - $ref: "#/components/parameters/From"
         - $ref: "#/components/parameters/To"
@@ -236,6 +238,8 @@ paths:
                     title: Go Backend Deep Dive
                     description: Build and ship a production Go API
                     city: Lagos
+                    category: engineering
+                    tags: [go, backend]
                     startAt: 2026-03-01T09:00:00Z
                     capacity: 120
                     createdAt: 2026-02-01T12:00:00Z
@@ -244,6 +248,8 @@ paths:
                     title: Intro to Distributed Systems
                     description: Practical patterns for reliability
                     city: Abuja
+                    category: architecture
+                    tags: [distributed-systems]
                     startAt: 2026-03-03T10:30:00Z
                     capacity: 90
                     createdAt: 2026-02-02T12:00:00Z
@@ -283,6 +289,8 @@ paths:
                 title: Go Backend Deep Dive
                 description: Build and ship a production Go API
                 city: Lagos
+                category: engineering
+                tags: [go, backend]
                 startAt: 2026-03-01T09:00:00Z
                 capacity: 120
                 createdAt: 2026-02-01T12:00:00Z
@@ -327,6 +335,7 @@ paths:
                 userId: c08d8f49-d4b5-4388-a20a-77fc29df2d64
                 name: Sam Example
                 email: sam@example.com
+                checkInToken: lP2A9x7sQ0dVJmK3bN4tUq
                 createdAt: 2026-02-10T08:00:00Z
                 updatedAt: 2026-02-10T08:00:00Z
         "400":
@@ -385,7 +394,7 @@ paths:
       operationId: cancelRegistration
       security:
         - bearerAuth: []
-      parameters:
+      parameters: 
         - $ref: "#/components/parameters/EventID"
         - $ref: "#/components/parameters/RegistrationID"
       responses:
@@ -398,6 +407,45 @@ paths:
         "403":
           $ref: "#/components/responses/Error"
         "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /admin/events/{id}/registrations/check-in:
+    post:
+      tags: [Admin]
+      summary: Check in a registration by token (admin)
+      operationId: adminCheckInRegistration
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/EventID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckInRegistrationRequest"
+            example:
+              token: lP2A9x7sQ0dVJmK3bN4tUq
+      responses:
+        "200":
+          description: Registration checked in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Registration"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "415":
           $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"
@@ -419,6 +467,8 @@ paths:
               title: Production Observability Workshop
               description: Metrics, traces, logs and alerting
               city: Lagos
+              category: observability
+              tags: [monitoring, tracing]
               startAt: 2026-03-10T10:00:00Z
               capacity: 150
       responses:
@@ -475,7 +525,7 @@ paths:
           $ref: "#/components/responses/Error"
     delete:
       tags: [Admin]
-      summary: Delete event (admin)
+      summary: Soft-delete event (admin)
       operationId: adminDeleteEvent
       security:
         - bearerAuth: []
@@ -483,7 +533,34 @@ paths:
         - $ref: "#/components/parameters/EventID"
       responses:
         "204":
-          description: Event deleted
+          description: Event soft-deleted
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /admin/events/{id}/restore:
+    post:
+      tags: [Admin]
+      summary: Restore soft-deleted event (admin)
+      operationId: adminRestoreEvent
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/EventID"
+      responses:
+        "200":
+          description: Event restored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -552,6 +629,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/IncludeTotal"
         - $ref: "#/components/parameters/JobStatus"
         - $ref: "#/components/parameters/IfNoneMatch"
       responses:
@@ -768,6 +846,20 @@ components:
       required: false
       schema:
         type: string
+    CategoryFilter:
+      in: query
+      name: category
+      required: false
+      description: Exact category filter (case-insensitive).
+      schema:
+        type: string
+    TagFilter:
+      in: query
+      name: tag
+      required: false
+      description: Exact tag filter (case-insensitive).
+      schema:
+        type: string
     SearchQuery:
       in: query
       name: q
@@ -911,6 +1003,12 @@ components:
           type: string
         city:
           type: string
+        category:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
         startAt:
           type: string
           format: date-time
@@ -938,6 +1036,17 @@ components:
           type: string
           minLength: 2
           maxLength: 80
+        category:
+          type: string
+          minLength: 2
+          maxLength: 50
+        tags:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 2
+            maxLength: 30
         startAt:
           type: string
           format: date-time
@@ -984,9 +1093,18 @@ components:
           format: email
           maxLength: 254
 
+    CheckInRegistrationRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 10
+          maxLength: 255
+
     Registration:
       type: object
-      required: [id, eventId, userId, name, email, createdAt, updatedAt]
+      required: [id, eventId, userId, name, email, checkInToken, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -1002,6 +1120,13 @@ components:
         email:
           type: string
           format: email
+        checkInToken:
+          type: string
+          description: Token to encode in a QR payload for event check-in.
+        checkedInAt:
+          type: string
+          format: date-time
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -1090,7 +1215,7 @@ components:
 
     JobsListResponse:
       type: object
-      required: [limit, count, items, hasMore, nextCursor]
+      required: [limit, count, items, hasMore, nextCursor, total]
       properties:
         limit:
           type: integer
@@ -1104,6 +1229,9 @@ components:
           type: boolean
         nextCursor:
           type: string
+          nullable: true
+        total:
+          type: integer
           nullable: true
 
     PublishJobAcceptedResponse:

@@ -32,6 +32,7 @@ type EventsCreator interface {
 
 	Update(ctx context.Context, id string, req event.UpdateEventRequest) (event.Event, error)
 	Delete(ctx context.Context, id string) error
+	Restore(ctx context.Context, id string) (event.Event, error)
 }
 
 type EventsHandler struct {
@@ -99,6 +100,16 @@ func (h *EventsHandler) ListEvents(ctx *gin.Context) {
 	if city := ctx.Query("city"); city != "" {
 		cityPtr = &city
 	}
+	var categoryPtr *string
+	if category := strings.TrimSpace(ctx.Query("category")); category != "" {
+		clean := strings.ToLower(category)
+		categoryPtr = &clean
+	}
+	var tagPtr *string
+	if tag := strings.TrimSpace(ctx.Query("tag")); tag != "" {
+		clean := strings.ToLower(tag)
+		tagPtr = &clean
+	}
 
 	var queryPtr *string
 	if q := strings.TrimSpace(ctx.Query("q")); q != "" {
@@ -124,11 +135,13 @@ func (h *EventsHandler) ListEvents(ctx *gin.Context) {
 	}
 
 	filter := event.ListEventsFilter{
-		City:  cityPtr,
-		From:  fromPtr,
-		To:    toPtr,
-		Query: queryPtr,
-		Limit: limit,
+		City:     cityPtr,
+		Category: categoryPtr,
+		Tag:      tagPtr,
+		From:     fromPtr,
+		To:       toPtr,
+		Query:    queryPtr,
+		Limit:    limit,
 	}
 
 	includeTotal := ctx.Query("includeTotal") == "true"
@@ -153,7 +166,7 @@ func (h *EventsHandler) ListEvents(ctx *gin.Context) {
 	cacheKey := ""
 
 	if cacheable {
-		cacheKey = utils.BuildEventsListCacheKey(limit, cityPtr, fromPtr, toPtr, queryPtr)
+		cacheKey = utils.BuildEventsListCacheKey(limit, cityPtr, categoryPtr, tagPtr, fromPtr, toPtr, queryPtr)
 
 		v, ok := h.cache.Get(cacheKey)
 
@@ -174,24 +187,17 @@ func (h *EventsHandler) ListEvents(ctx *gin.Context) {
 		return
 	}
 
-	var total any = nil
+	var total *int
 	if includeTotal {
 		t, err := h.repo.Count(cctx, filter)
 		if err != nil {
 			RespondInternal(ctx, "Could not count events")
 			return
 		}
-		total = t
+		total = &t
 	}
 
-	resp := gin.H{
-		"limit":      limit,
-		"count":      len(items),
-		"items":      items,
-		"hasMore":    hasMore,
-		"nextCursor": next,  // *string -> null when nil
-		"total":      total, // null unless includeTotal=true
-	}
+	resp := BuildCursorPageResponse(limit, items, hasMore, next, total)
 
 	if cacheable {
 		h.cache.Set(cacheKey, resp)
@@ -298,4 +304,33 @@ func (h *EventsHandler) DeleteEvent(ctx *gin.Context) {
 		h.cache.Clear()
 	}
 	ctx.Status(http.StatusNoContent) //204 empty body.
+}
+
+func (h *EventsHandler) RestoreEvent(ctx *gin.Context) {
+	id := ctx.Param("id")
+
+	if !utils.IsUUID(id) {
+		RespondBadRequest(ctx, "invalid_id", "id must be a valid UUID")
+		return
+	}
+
+	cctx, cancel := config.WithTimeout(2 * time.Second)
+	defer cancel()
+
+	e, err := h.repo.Restore(cctx, id)
+	if err != nil {
+		if errors.Is(err, event.ErrNotFound) {
+			RespondNotFound(ctx, "Event not found")
+			return
+		}
+
+		RespondInternal(ctx, "Could not restore event")
+		return
+	}
+
+	if h.cache != nil {
+		h.cache.Clear()
+	}
+
+	ctx.JSON(http.StatusOK, e)
 }

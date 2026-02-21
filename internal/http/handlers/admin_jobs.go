@@ -23,6 +23,7 @@ type AdminJobsRepo interface {
 		afterUpdatedAt time.Time,
 		afterID string,
 	) (items []job.Job, nextCursor *string, hasMore bool, err error)
+	Count(ctx context.Context, status *string) (int, error)
 	GetByID(ctx context.Context, id string) (job.Job, error)
 	Retry(ctx context.Context, id string) error
 	RetryManyFailed(ctx context.Context, limit int) (int64, error)
@@ -60,6 +61,7 @@ func (h *AdminJobsHandler) List(ctx *gin.Context) {
 		RespondBadRequest(ctx, "invalid_query", "limit must be between 1 and 100")
 		return
 	}
+	includeTotal := ctx.Query("includeTotal") == "true"
 
 	var statusPtr *string
 	if s := ctx.Query("status"); s != "" {
@@ -91,13 +93,17 @@ func (h *AdminJobsHandler) List(ctx *gin.Context) {
 		return
 	}
 
-	resp := gin.H{
-		"limit":      limit,
-		"count":      len(items),
-		"items":      items,
-		"hasMore":    hasMore,
-		"nextCursor": next,
+	var total *int
+	if includeTotal {
+		t, err := h.repo.Count(cctx, statusPtr)
+		if err != nil {
+			RespondInternal(ctx, "Could not count jobs")
+			return
+		}
+		total = &t
 	}
+
+	resp := BuildCursorPageResponse(limit, items, hasMore, next, total)
 
 	RespondJSONWithETag(ctx, http.StatusOK, resp)
 }

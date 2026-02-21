@@ -38,6 +38,7 @@ type fakeEventsRepo struct {
 	countFn      func(ctx context.Context, filters event.ListEventsFilter) (int, error)
 	updateFn     func(ctx context.Context, id string, req event.UpdateEventRequest) (event.Event, error)
 	deleteFn     func(ctx context.Context, id string) error
+	restoreFn    func(ctx context.Context, id string) (event.Event, error)
 }
 
 func (f *fakeEventsRepo) Create(ctx context.Context, req event.CreateEventRequest) (event.Event, error) {
@@ -97,6 +98,14 @@ func (f *fakeEventsRepo) Delete(ctx context.Context, id string) error {
 	}
 
 	return nil
+}
+
+func (f *fakeEventsRepo) Restore(ctx context.Context, id string) (event.Event, error) {
+	if f.restoreFn != nil {
+		return f.restoreFn(ctx, id)
+	}
+
+	return event.Event{}, nil
 }
 
 // small helper function which returns the gin engine to mount one handler per test
@@ -272,6 +281,37 @@ func TestListEventsHandler(t *testing.T) {
 							City:        "Lagos",
 							StartAt:     now,
 							Capacity:    80,
+							CreatedAt:   now,
+							UpdatedAt:   now,
+						},
+					}, nil, false, nil
+				}
+			},
+			wantStatusCode: http.StatusOK,
+			wantCount:      1,
+		},
+		{
+			name: "success_with_category_and_tag_filters",
+			url:  "/events?limit=20&category=Engineering&tag=Go",
+			repoSetup: func(f *fakeEventsRepo) {
+				f.listCursorFn = func(ctx context.Context, filters event.ListEventsFilter, afterStartAt time.Time, afterID string) ([]event.Event, *string, bool, error) {
+					if filters.Category == nil || *filters.Category != "engineering" {
+						return nil, nil, false, errors.New("category filter not passed")
+					}
+					if filters.Tag == nil || *filters.Tag != "go" {
+						return nil, nil, false, errors.New("tag filter not passed")
+					}
+
+					return []event.Event{
+						{
+							ID:          "id-tag-1",
+							Title:       "Go Concurrency",
+							Description: "Tag filter test",
+							City:        "Lagos",
+							Category:    "engineering",
+							Tags:        []string{"go", "backend"},
+							StartAt:     now,
+							Capacity:    70,
 							CreatedAt:   now,
 							UpdatedAt:   now,
 						},
@@ -640,6 +680,82 @@ func TestDeleteEventHandler(t *testing.T) {
 
 			w := httptest.NewRecorder()
 
+			r.ServeHTTP(w, req)
+
+			if w.Code != tt.wantStatusCode {
+				t.Fatalf("got status %d, want %d, body=%s", w.Code, tt.wantStatusCode, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestRestoreEventHandler(t *testing.T) {
+	now := time.Now().UTC()
+	validID := newUUID()
+	missingID := newUUID()
+
+	tests := []struct {
+		name           string
+		url            string
+		repoSetup      func(*fakeEventsRepo)
+		wantStatusCode int
+	}{
+		{
+			name: "success",
+			url:  "/events/" + validID + "/restore",
+			repoSetup: func(f *fakeEventsRepo) {
+				f.restoreFn = func(ctx context.Context, id string) (event.Event, error) {
+					return event.Event{
+						ID:          id,
+						Title:       "Restored Event",
+						Description: "desc",
+						City:        "Lagos",
+						StartAt:     now,
+						Capacity:    20,
+						CreatedAt:   now.Add(-time.Hour),
+						UpdatedAt:   now,
+					}, nil
+				}
+			},
+			wantStatusCode: http.StatusOK,
+		},
+		{
+			name: "not_found",
+			url:  "/events/" + missingID + "/restore",
+			repoSetup: func(f *fakeEventsRepo) {
+				f.restoreFn = func(ctx context.Context, id string) (event.Event, error) {
+					return event.Event{}, event.ErrNotFound
+				}
+			},
+			wantStatusCode: http.StatusNotFound,
+		},
+		{
+			name: "repo_error",
+			url:  "/events/" + validID + "/restore",
+			repoSetup: func(f *fakeEventsRepo) {
+				f.restoreFn = func(ctx context.Context, id string) (event.Event, error) {
+					return event.Event{}, errors.New("db error")
+				}
+			},
+			wantStatusCode: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+
+		t.Run(tt.name, func(t *testing.T) {
+			fakeEventsRepo := &fakeEventsRepo{}
+
+			if tt.repoSetup != nil {
+				tt.repoSetup(fakeEventsRepo)
+			}
+
+			h := handlers.NewEventsHandler(fakeEventsRepo)
+			r := setupRouter(http.MethodPost, "/events/:id/restore", h.RestoreEvent)
+
+			req := httptest.NewRequest(http.MethodPost, tt.url, nil)
+			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
 
 			if w.Code != tt.wantStatusCode {

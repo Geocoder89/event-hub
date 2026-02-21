@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/geocoder89/eventhub/internal/config"
@@ -36,11 +37,16 @@ type RegistrationCreator interface {
 	CountForEvent(ctx context.Context, eventID string) (int, error)
 	GetByID(ctx context.Context, eventID, registrationID string) (registration.Registration, error)
 	Delete(ctx context.Context, eventID, registrationID string) error
+	CheckInByToken(ctx context.Context, eventID, token string) (registration.Registration, error)
 }
 
 type RegistrationHandler struct {
 	repo     RegistrationCreator
 	jobsRepo JobsCreator
+}
+
+type checkInRequest struct {
+	Token string `json:"token" binding:"required,min=10,max=255"`
 }
 
 func NewRegistrationHandler(repo RegistrationCreator, jobsRepo JobsCreator) *RegistrationHandler {
@@ -206,24 +212,17 @@ func (h *RegistrationHandler) ListForEvent(ctx *gin.Context) {
 		return
 	}
 
-	var total any = nil
+	var total *int
 	if includeTotal {
 		t, err := h.repo.CountForEvent(cctx, eventID)
 		if err != nil {
 			RespondInternal(ctx, "Could not count registrations")
 			return
 		}
-		total = t
+		total = &t
 	}
 
-	resp := gin.H{
-		"limit":      limit,
-		"count":      len(items),
-		"items":      items,
-		"hasMore":    hasMore,
-		"nextCursor": next,
-		"total":      total,
-	}
+	resp := BuildCursorPageResponse(limit, items, hasMore, next, total)
 
 	RespondJSONWithETag(ctx, http.StatusOK, resp)
 }
@@ -295,4 +294,41 @@ func (h *RegistrationHandler) Cancel(ctx *gin.Context) {
 	}
 
 	ctx.Status(http.StatusNoContent)
+}
+
+func (h *RegistrationHandler) CheckIn(ctx *gin.Context) {
+	eventID := ctx.Param("id")
+	if !utils.IsUUID(eventID) {
+		RespondBadRequest(ctx, "invalid_id", "event id must be a valid UUID")
+		return
+	}
+
+	var req checkInRequest
+	if !BindJSON(ctx, &req) {
+		return
+	}
+
+	token := strings.TrimSpace(req.Token)
+	if token == "" {
+		RespondBadRequest(ctx, "invalid_request", "token is required")
+		return
+	}
+
+	cctx, cancel := config.WithTimeout(2 * time.Second)
+	defer cancel()
+
+	reg, err := h.repo.CheckInByToken(cctx, eventID, token)
+	if err != nil {
+		switch {
+		case errors.Is(err, registration.ErrAlreadyCheckedIn):
+			RespondConflict(ctx, "already_checked_in", "registration is already checked in")
+		case errors.Is(err, registration.ErrNotFound):
+			RespondNotFound(ctx, "Registration not found")
+		default:
+			RespondInternal(ctx, "Could not check in registration")
+		}
+		return
+	}
+
+	ctx.JSON(http.StatusOK, reg)
 }

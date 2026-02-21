@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -38,14 +39,46 @@ func NewEventsRepo(pool *pgxpool.Pool, prom *observability.Prom) *EventsRepo {
 	}
 }
 
+func normalizeEventCategory(v string) string {
+	return strings.ToLower(strings.TrimSpace(v))
+}
+
+func normalizeEventTags(tags []string) []string {
+	if len(tags) == 0 {
+		return []string{}
+	}
+
+	out := make([]string, 0, len(tags))
+	seen := make(map[string]struct{}, len(tags))
+
+	for _, tag := range tags {
+		t := strings.ToLower(strings.TrimSpace(tag))
+		if t == "" {
+			continue
+		}
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+
+	sort.Strings(out)
+	return out
+}
+
 func (r *EventsRepo) Create(ctx context.Context, req event.CreateEventRequest) (event.Event, error) {
 	var err error
 	e := event.NewFromCreateRequest(req)
+	e.Category = normalizeEventCategory(req.Category)
+	e.Tags = normalizeEventTags(req.Tags)
 	op := "events.create"
 
 	err = r.observe(op, func() error {
 		_, err = r.pool.Exec(ctx,
-			`INSERT INTO events(id,title, description, city, start_at, capacity,created_at, updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, e.ID, e.Title, e.Description, e.City, e.StartAt, e.Capacity, e.CreatedAt, e.UpdatedAt)
+			`INSERT INTO events(id,title, description, city, category, tags, start_at, capacity,created_at, updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+			e.ID, e.Title, e.Description, e.City, e.Category, e.Tags, e.StartAt, e.Capacity, e.CreatedAt, e.UpdatedAt,
+		)
 
 		return err
 	})
@@ -68,6 +101,8 @@ func (r *EventsRepo) List(ctx context.Context, filteredEvents event.ListEventsFi
 		title, 
 		description,
 		city,
+		category,
+		tags,
 		start_at, 
 		capacity,
 	  created_at,
@@ -77,6 +112,7 @@ func (r *EventsRepo) List(ctx context.Context, filteredEvents event.ListEventsFi
 	`
 
 	var conds []string
+	conds = append(conds, "deleted_at IS NULL")
 	var args []interface{}
 
 	argsPosition := 1
@@ -86,6 +122,22 @@ func (r *EventsRepo) List(ctx context.Context, filteredEvents event.ListEventsFi
 		conds = append(conds, fmt.Sprintf("city = $%d", argsPosition))
 		args = append(args, *filteredEvents.City)
 		argsPosition++
+	}
+	if filteredEvents.Category != nil {
+		category := normalizeEventCategory(*filteredEvents.Category)
+		if category != "" {
+			conds = append(conds, fmt.Sprintf("category = $%d", argsPosition))
+			args = append(args, category)
+			argsPosition++
+		}
+	}
+	if filteredEvents.Tag != nil {
+		tag := normalizeEventCategory(*filteredEvents.Tag)
+		if tag != "" {
+			conds = append(conds, fmt.Sprintf("tags @> ARRAY[$%d]::text[]", argsPosition))
+			args = append(args, tag)
+			argsPosition++
+		}
 	}
 
 	// From filter
@@ -139,7 +191,7 @@ func (r *EventsRepo) List(ctx context.Context, filteredEvents event.ListEventsFi
 		var e event.Event
 		var t int
 
-		err = rows.Scan(&e.ID, &e.Title, &e.Description, &e.City, &e.StartAt, &e.Capacity, &e.CreatedAt, &e.UpdatedAt, &t)
+		err = rows.Scan(&e.ID, &e.Title, &e.Description, &e.City, &e.Category, &e.Tags, &e.StartAt, &e.Capacity, &e.CreatedAt, &e.UpdatedAt, &t)
 
 		if err != nil {
 			return nil, 0, err
@@ -162,6 +214,7 @@ func (r *EventsRepo) Count(ctx context.Context, filteredEvents event.ListEventsF
 	op := "events.count"
 
 	var conds []string
+	conds = append(conds, "deleted_at IS NULL")
 	var args []interface{}
 	argsPos := 1
 
@@ -169,6 +222,22 @@ func (r *EventsRepo) Count(ctx context.Context, filteredEvents event.ListEventsF
 		conds = append(conds, fmt.Sprintf("city = $%d", argsPos))
 		args = append(args, *filteredEvents.City)
 		argsPos++
+	}
+	if filteredEvents.Category != nil {
+		category := normalizeEventCategory(*filteredEvents.Category)
+		if category != "" {
+			conds = append(conds, fmt.Sprintf("category = $%d", argsPos))
+			args = append(args, category)
+			argsPos++
+		}
+	}
+	if filteredEvents.Tag != nil {
+		tag := normalizeEventCategory(*filteredEvents.Tag)
+		if tag != "" {
+			conds = append(conds, fmt.Sprintf("tags @> ARRAY[$%d]::text[]", argsPos))
+			args = append(args, tag)
+			argsPos++
+		}
 	}
 	if filteredEvents.From != nil {
 		conds = append(conds, fmt.Sprintf("start_at >= $%d", argsPos))
@@ -211,6 +280,7 @@ func (r *EventsRepo) ListCursor(
 	op := "events.list_cursor"
 
 	var conds []string
+	conds = append(conds, "deleted_at IS NULL")
 	var args []interface{}
 	argsPos := 1
 
@@ -219,6 +289,22 @@ func (r *EventsRepo) ListCursor(
 		conds = append(conds, fmt.Sprintf("city = $%d", argsPos))
 		args = append(args, *filteredEvents.City)
 		argsPos++
+	}
+	if filteredEvents.Category != nil {
+		category := normalizeEventCategory(*filteredEvents.Category)
+		if category != "" {
+			conds = append(conds, fmt.Sprintf("category = $%d", argsPos))
+			args = append(args, category)
+			argsPos++
+		}
+	}
+	if filteredEvents.Tag != nil {
+		tag := normalizeEventCategory(*filteredEvents.Tag)
+		if tag != "" {
+			conds = append(conds, fmt.Sprintf("tags @> ARRAY[$%d]::text[]", argsPos))
+			args = append(args, tag)
+			argsPos++
+		}
 	}
 	if filteredEvents.From != nil {
 		conds = append(conds, fmt.Sprintf("start_at >= $%d", argsPos))
@@ -245,7 +331,7 @@ func (r *EventsRepo) ListCursor(
 	argsPos += 2
 
 	q := `
-		SELECT id, title, description, city, start_at, capacity, created_at, updated_at
+		SELECT id, title, description, city, category, tags, start_at, capacity, created_at, updated_at
 		FROM events
 	`
 	if len(conds) > 0 {
@@ -272,7 +358,7 @@ func (r *EventsRepo) ListCursor(
 	for rows.Next() {
 		var e event.Event
 		if scanErr := rows.Scan(
-			&e.ID, &e.Title, &e.Description, &e.City, &e.StartAt, &e.Capacity, &e.CreatedAt, &e.UpdatedAt,
+			&e.ID, &e.Title, &e.Description, &e.City, &e.Category, &e.Tags, &e.StartAt, &e.Capacity, &e.CreatedAt, &e.UpdatedAt,
 		); scanErr != nil {
 			return nil, nil, false, scanErr
 		}
@@ -303,7 +389,7 @@ func (r *EventsRepo) GetByID(ctx context.Context, id string) (event.Event, error
 	op := "events.GetByID"
 
 	err = r.observe(op, func() error {
-		return r.pool.QueryRow(ctx, `SELECT id, title, description,city,start_at,capacity,created_at,updated_at FROM events WHERE id =$1`, id).Scan(&e.ID, &e.Title, &e.Description, &e.City, &e.StartAt, &e.Capacity, &e.CreatedAt, &e.UpdatedAt)
+		return r.pool.QueryRow(ctx, `SELECT id, title, description, city, category, tags, start_at, capacity, created_at, updated_at FROM events WHERE id =$1 AND deleted_at IS NULL`, id).Scan(&e.ID, &e.Title, &e.Description, &e.City, &e.Category, &e.Tags, &e.StartAt, &e.Capacity, &e.CreatedAt, &e.UpdatedAt)
 	})
 
 	if err != nil {
@@ -317,6 +403,8 @@ func (r *EventsRepo) Update(ctx context.Context, id string, req event.UpdateEven
 	var e event.Event
 	var err error
 	op := "events.update"
+	category := normalizeEventCategory(req.Category)
+	tags := normalizeEventTags(req.Tags)
 
 	err = r.observe(op, func() error {
 		return r.pool.QueryRow(
@@ -327,20 +415,27 @@ func (r *EventsRepo) Update(ctx context.Context, id string, req event.UpdateEven
 					city = $4,
 					start_at = $5,
 					capacity = $6,
+					category = $7,
+					tags = $8,
 					updated_at = NOW()
-		WHERE id = $1
-		RETURNING id, title, description, city, start_at, capacity,created_at,updated_at`,
+			WHERE id = $1
+				AND deleted_at IS NULL
+			RETURNING id, title, description, city, category, tags, start_at, capacity, created_at, updated_at`,
 			id,
 			req.Title,
 			req.Description,
 			req.City,
 			req.StartAt,
 			req.Capacity,
+			category,
+			tags,
 		).Scan(
 			&e.ID,
 			&e.Title,
 			&e.Description,
 			&e.City,
+			&e.Category,
+			&e.Tags,
 			&e.StartAt,
 			&e.Capacity,
 			&e.CreatedAt,
@@ -368,7 +463,11 @@ func (r *EventsRepo) Delete(ctx context.Context, id string) error {
 
 	err = r.observe(op, func() error {
 		query, err = r.pool.Exec(ctx, `
-		DELETE from events WHERE id = $1
+		UPDATE events
+		SET deleted_at = NOW(),
+		    updated_at = NOW()
+		WHERE id = $1
+		  AND deleted_at IS NULL
 	`, id)
 		return err
 	})
@@ -386,6 +485,68 @@ func (r *EventsRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+func (r *EventsRepo) Restore(ctx context.Context, id string) (event.Event, error) {
+	var e event.Event
+	var err error
+	op := "events.restore"
+
+	err = r.observe(op, func() error {
+		return r.pool.QueryRow(ctx, `
+			UPDATE events
+			SET deleted_at = NULL,
+			    updated_at = NOW()
+			WHERE id = $1
+			  AND deleted_at IS NOT NULL
+			RETURNING id, title, description, city, category, tags, start_at, capacity, created_at, updated_at
+		`, id).Scan(
+			&e.ID,
+			&e.Title,
+			&e.Description,
+			&e.City,
+			&e.Category,
+			&e.Tags,
+			&e.StartAt,
+			&e.Capacity,
+			&e.CreatedAt,
+			&e.UpdatedAt,
+		)
+	})
+	if err == nil {
+		return e, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return event.Event{}, err
+	}
+
+	err = r.observe(op+".check_active", func() error {
+		return r.pool.QueryRow(ctx, `
+			SELECT id, title, description, city, category, tags, start_at, capacity, created_at, updated_at
+			FROM events
+			WHERE id = $1
+			  AND deleted_at IS NULL
+		`, id).Scan(
+			&e.ID,
+			&e.Title,
+			&e.Description,
+			&e.City,
+			&e.Category,
+			&e.Tags,
+			&e.StartAt,
+			&e.Capacity,
+			&e.CreatedAt,
+			&e.UpdatedAt,
+		)
+	})
+	if err == nil {
+		return e, nil
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return event.Event{}, event.ErrNotFound
+	}
+
+	return event.Event{}, err
+}
+
 func (r *EventsRepo) MarkPublished(ctx context.Context, eventID string) (bool, error) {
 
 	var tag pgconn.CommandTag
@@ -398,8 +559,9 @@ func (r *EventsRepo) MarkPublished(ctx context.Context, eventID string) (bool, e
 		UPDATE events
 		SET published_at = NOW(),
 		    updated_at = NOW()
-		WHERE id = $1
-		  AND published_at IS NULL
+			WHERE id = $1
+			  AND published_at IS NULL
+			  AND deleted_at IS NULL
 	`, eventID)
 		return err
 	})

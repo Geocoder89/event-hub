@@ -11,6 +11,11 @@ func RequireJSON() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		switch c.Request.Method {
 		case http.MethodPost, http.MethodPut, http.MethodPatch:
+			if !hasRequestBody(c.Request) {
+				c.Next()
+				return
+			}
+
 			ct := c.GetHeader("Content-Type")
 			// allow "application/json; charset=utf-8"
 			if ct == "" || !strings.HasPrefix(strings.ToLower(ct), "application/json") {
@@ -25,4 +30,16 @@ func RequireJSON() gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+func hasRequestBody(r *http.Request) bool {
+	if r.ContentLength > 0 {
+		return true
+	}
+
+	if r.ContentLength == -1 && len(r.TransferEncoding) > 0 {
+		return true
+	}
+
+	return false
 }

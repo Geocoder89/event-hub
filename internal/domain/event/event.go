@@ -10,6 +10,8 @@ type Event struct {
 	Title       string    `json:"title"`
 	Description string    `json:"description,omitempty"`
 	City        string    `json:"city,omitempty"`
+	Category    string    `json:"category,omitempty"`
+	Tags        []string  `json:"tags,omitempty"`
 	StartAt     time.Time `json:"startAt"`
 	Capacity    int       `json:"capacity"`
 	CreatedAt   time.Time `json:"createdAt"`
@@ -18,12 +20,14 @@ type Event struct {
 
 // with pointers if optional, it will be nil
 type ListEventsFilter struct {
-	City   *string
-	From   *time.Time
-	To     *time.Time
-	Query  *string
-	Limit  int
-	Offset int
+	City     *string
+	Category *string
+	Tag      *string
+	From     *time.Time
+	To       *time.Time
+	Query    *string
+	Limit    int
+	Offset   int
 }
 
 var ErrNotFound = errors.New("event not found")
@@ -32,6 +36,8 @@ type CreateEventRequest struct {
 	Title       string    `json:"title" binding:"required,min=3,max=120"`
 	Description string    `json:"description" binding:"omitempty,max=1000"`
 	City        string    `json:"city" binding:"omitempty,min=2,max=80"`
+	Category    string    `json:"category" binding:"omitempty,min=2,max=50"`
+	Tags        []string  `json:"tags" binding:"omitempty,max=20,dive,min=2,max=30"`
 	StartAt     time.Time `json:"startAt" binding:"required"`
 	Capacity    int       `json:"capacity" binding:"required,min=1,max=50000"`
 }
@@ -41,6 +47,8 @@ type UpdateEventRequest struct {
 	Title       string    `json:"title" binding:"required,min=3,max=120"`
 	Description string    `json:"description" binding:"omitempty,max=1000"`
 	City        string    `json:"city" binding:"omitempty,min=2,max=80"`
+	Category    string    `json:"category" binding:"omitempty,min=2,max=50"`
+	Tags        []string  `json:"tags" binding:"omitempty,max=20,dive,min=2,max=30"`
 	StartAt     time.Time `json:"startAt" binding:"required"`
 	Capacity    int       `json:"capacity" binding:"required,min=1,max=50000"`
 }

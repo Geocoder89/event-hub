@@ -2,7 +2,7 @@ leAPP_NAME   := eventhub
 GOOSE_DIR  := db/migrations
 AIR        := $(shell go env GOPATH)/bin/air
 
-.PHONY: up down build run dev fmt vet tidy migrate migrate-up migrate-down test lint check-db-env
+.PHONY: up down build run dev fmt vet tidy migrate migrate-up migrate-down test lint check-db-env gosec govuln security
 
 -include .env
 export
@@ -42,6 +42,14 @@ lint: fmt vet
 
 test:
 	go test ./... -v
+
+gosec:
+	golangci-lint run --no-config --enable-only gosec ./...
+
+govuln:
+	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+security: gosec govuln
 
 # ---- DB / Migrations ----
 

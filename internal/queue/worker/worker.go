@@ -1,7 +1,9 @@
 package worker
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +17,8 @@ import (
 	"github.com/geocoder89/eventhub/internal/actorctx"
 	"github.com/geocoder89/eventhub/internal/domain/job"
 	notificationsdelivery "github.com/geocoder89/eventhub/internal/domain/notifications_delivery"
+	"github.com/geocoder89/eventhub/internal/domain/registration"
+	"github.com/geocoder89/eventhub/internal/domain/registrationexport"
 	"github.com/geocoder89/eventhub/internal/jobs"
 	"github.com/geocoder89/eventhub/internal/notifications"
 	"github.com/geocoder89/eventhub/internal/observability"
@@ -44,6 +48,14 @@ type EventsRepository interface {
 	MarkPublished(ctx context.Context, eventID string) (bool, error)
 }
 
+type RegistrationsExportReader interface {
+	ListForEventExport(ctx context.Context, eventID string) ([]registration.Registration, error)
+}
+
+type RegistrationCSVExportsWriter interface {
+	Save(ctx context.Context, export registrationexport.CSVExport) error
+}
+
 type Config struct {
 	PollInterval  time.Duration
 	WorkerID      string
@@ -58,6 +70,8 @@ type Worker struct {
 	repo         JobsRepository
 	events       EventsRepository
 	metrics      *observability.JobMetrics
+	regsExport   RegistrationsExportReader
+	csvExports   RegistrationCSVExportsWriter
 	notifier     notifications.Notifier
 	deliveries   *postgres.NotificationsDeliveriesRepo
 	readyMu      sync.RWMutex
@@ -112,6 +126,12 @@ func New(cfg Config, repo JobsRepository, events EventsRepository, notifier noti
 	}
 }
 
+func (w *Worker) WithRegistrationCSVExporter(reader RegistrationsExportReader, writer RegistrationCSVExportsWriter) *Worker {
+	w.regsExport = reader
+	w.csvExports = writer
+	return w
+}
+
 var tracer = otel.Tracer("eventhub-worker")
 
 func (w *Worker) logMetricsLoop(ctx context.Context, every time.Duration) {
@@ -164,7 +184,11 @@ func (w *Worker) requeueLoop(ctx context.Context) {
 
 func (w *Worker) Run(ctx context.Context) error {
 	// health server
-	srv := &http.Server{Addr: w.cfg.HealthAddr, Handler: w.HealthHandler(w.PromRegistry)}
+	srv := &http.Server{
+		Addr:              w.cfg.HealthAddr,
+		Handler:           w.HealthHandler(w.PromRegistry),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
 
 	healthDone := make(chan struct{})
 
@@ -491,6 +515,43 @@ func (w *Worker) execute(ctx context.Context, j job.Job) error {
 		}
 		return nil
 
+	case jobs.TypeRegistrationsExportCSV:
+		var p jobs.RegistrationsExportCSVPayload
+		if err := json.Unmarshal(j.Payload, &p); err != nil {
+			return fmt.Errorf("invalid payload: %w", err)
+		}
+
+		if w.regsExport == nil || w.csvExports == nil {
+			return fmt.Errorf("registration csv export dependencies not configured")
+		}
+
+		regs, err := w.regsExport.ListForEventExport(ctx, p.EventID)
+		if err != nil {
+			return err
+		}
+
+		csvData, err := buildRegistrationsCSV(regs)
+		if err != nil {
+			return err
+		}
+
+		var requestedBy *string
+		if p.RequestedBy != "" {
+			requestedBy = &p.RequestedBy
+		}
+
+		fileName := fmt.Sprintf("event_%s_registrations_%s.csv", p.EventID, time.Now().UTC().Format("20060102_150405"))
+		return w.csvExports.Save(ctx, registrationexport.CSVExport{
+			JobID:       j.ID,
+			EventID:     p.EventID,
+			RequestedBy: requestedBy,
+			FileName:    fileName,
+			ContentType: "text/csv",
+			RowCount:    len(regs),
+			Data:        csvData,
+			CreatedAt:   time.Now().UTC(),
+		})
+
 	case "test.crash":
 		time.Sleep(60 * time.Second)
 
@@ -514,6 +575,51 @@ func (w *Worker) execute(ctx context.Context, j job.Job) error {
 		time.Sleep(750 * time.Millisecond)
 		return fmt.Errorf("unknown job type: %s", j.Type)
 	}
+}
+
+func buildRegistrationsCSV(regs []registration.Registration) ([]byte, error) {
+	buf := &bytes.Buffer{}
+	w := csv.NewWriter(buf)
+
+	if err := w.Write([]string{
+		"registration_id",
+		"event_id",
+		"user_id",
+		"name",
+		"email",
+		"check_in_token",
+		"checked_in_at",
+		"created_at",
+	}); err != nil {
+		return nil, err
+	}
+
+	for _, r := range regs {
+		checkedInAt := ""
+		if r.CheckedInAt != nil {
+			checkedInAt = r.CheckedInAt.UTC().Format(time.RFC3339)
+		}
+
+		if err := w.Write([]string{
+			r.ID,
+			r.EventID,
+			r.UserID,
+			r.Name,
+			r.Email,
+			r.CheckInToken,
+			checkedInAt,
+			r.CreatedAt.UTC().Format(time.RFC3339),
+		}); err != nil {
+			return nil, err
+		}
+	}
+
+	w.Flush()
+	if err := w.Error(); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }
 
 func (w *Worker) handleFailure(ctx context.Context, j job.Job, execError error) {

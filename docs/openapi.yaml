@@ -619,6 +619,83 @@ paths:
         "500":
           $ref: "#/components/responses/Error"
 
+  /admin/events/{id}/registrations/export:
+    post:
+      tags: [Admin]
+      summary: Enqueue registrations CSV export job (admin)
+      operationId: adminExportRegistrationsCSV
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/EventID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        "202":
+          description: Export job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistrationsExportJobAcceptedResponse"
+              example:
+                jobId: 5fd3fb59-f249-4ea2-9c01-76ee32e48efe
+                status: pending
+                type: registrations.export_csv
+                downloadPath: /admin/jobs/5fd3fb59-f249-4ea2-9c01-76ee32e48efe/registrations-export.csv
+                alreadyEnqueued: false
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "415":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /admin/jobs/{id}/registrations-export.csv:
+    get:
+      tags: [Admin]
+      summary: Download generated registrations CSV by job ID (admin)
+      operationId: adminDownloadRegistrationsCSV
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+      responses:
+        "200":
+          description: CSV export content
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: Attachment file name for the CSV.
+            X-Export-Row-Count:
+              schema:
+                type: integer
+              description: Number of registration rows exported.
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
   /admin/jobs:
     get:
       tags: [Admin]
@@ -1245,6 +1322,24 @@ components:
           type: string
           enum: [pending, processing, done, failed]
         type:
+          type: string
+        alreadyEnqueued:
+          type: boolean
+
+    RegistrationsExportJobAcceptedResponse:
+      type: object
+      required: [jobId, status, type, downloadPath, alreadyEnqueued]
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, processing, done, failed]
+        type:
+          type: string
+          example: registrations.export_csv
+        downloadPath:
           type: string
         alreadyEnqueued:
           type: boolean

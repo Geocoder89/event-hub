@@ -97,6 +97,7 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 	refreshTokensRepo := postgres.NewRefreshTokensRepo(pool)
 	jobsRepo := postgres.NewJobsRepo(pool, prom)
 	adminActionAuditsRepo := postgres.NewAdminActionAuditsRepo(pool)
+	registrationCSVExportsRepo := postgres.NewRegistrationCSVExportsRepo(pool)
 
 	// events cache
 	eventsCache := cache.New(10 * time.Second)
@@ -110,7 +111,7 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 	// Wire up more handler
 	eventsHandler := handlers.NewEventsHandlerWithCache(eventsRepo, eventsCache)
 	registrationHandler := handlers.NewRegistrationHandler(registrationRepo, jobsRepo)
-	jobsHandler := handlers.NewJobsHandler(jobsRepo)
+	jobsHandler := handlers.NewJobsHandler(jobsRepo, registrationCSVExportsRepo)
 	authHandler := handlers.NewAuthHandler(usersRepo, usersRepo, jwtManager, refreshTokensRepo, cfg)
 	adminJobsHandler := handlers.NewAdminJobsHandler(jobsRepo)
 	authMiddleware := middlewares.NewAuthMiddleware(jwtManager)
@@ -172,7 +173,9 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 		admin.DELETE("/events/:id", eventsHandler.DeleteEvent)
 		admin.POST("/events/:id/restore", eventsHandler.RestoreEvent)
 		admin.POST("/events/:id/registrations/check-in", registrationHandler.CheckIn)
+		admin.POST("/events/:id/registrations/export", jobsHandler.ExportRegistrationsCSV)
 		admin.POST("/events/:id/publish", jobsHandler.PublishEvent)
+		admin.GET("/jobs/:id/registrations-export.csv", jobsHandler.DownloadRegistrationsCSV)
 	}
 
 	// prometheus endpoint

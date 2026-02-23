@@ -357,6 +357,42 @@ func (repo *RegistrationRepo) Delete(ctx context.Context, eventID, registrationI
 	return
 }
 
+func (repo *RegistrationRepo) ListForEventExport(ctx context.Context, eventID string) ([]registration.Registration, error) {
+	op := "registrations.list_for_event_export"
+
+	var rows pgx.Rows
+	err := repo.observe(op, func() error {
+		var qerr error
+		rows, qerr = repo.pool.Query(ctx, `
+			SELECT r.id, r.event_id, r.user_id, r.name, r.email, r.check_in_token, r.checked_in_at, r.created_at, r.updated_at
+			FROM registrations r
+			JOIN events e ON e.id = r.event_id
+			WHERE r.event_id = $1
+			  AND e.deleted_at IS NULL
+			ORDER BY r.created_at ASC, r.id ASC
+		`, eventID)
+		return qerr
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]registration.Registration, 0)
+	for rows.Next() {
+		var r registration.Registration
+		if scanErr := rows.Scan(&r.ID, &r.EventID, &r.UserID, &r.Name, &r.Email, &r.CheckInToken, &r.CheckedInAt, &r.CreatedAt, &r.UpdatedAt); scanErr != nil {
+			return nil, scanErr
+		}
+		out = append(out, r)
+	}
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return out, nil
+}
+
 func (repo *RegistrationRepo) CheckInByToken(ctx context.Context, eventID, token string) (registration.Registration, error) {
 	op := "registrations.check_in_by_token"
 

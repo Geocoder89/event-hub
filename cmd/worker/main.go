@@ -50,6 +50,8 @@ func main() {
 
 	jobsRepo := postgres.NewJobsRepo(pool, prom)
 	eventsRepo := postgres.NewEventsRepo(pool, prom)
+	registrationsRepo := postgres.NewRegistrationsRepo(pool, prom)
+	registrationCSVExportsRepo := postgres.NewRegistrationCSVExportsRepo(pool)
 
 	host, _ := os.Hostname()
 	workerID := host + "-" + strconv.Itoa(os.Getpid())
@@ -76,7 +78,8 @@ func main() {
 		ShutdownGrace: 10 * time.Second,
 		LockTTL:       30 * time.Second,
 		HealthAddr:    healthAddr,
-	}, jobsRepo, eventsRepo, notifier, deliveriesRepo)
+	}, jobsRepo, eventsRepo, notifier, deliveriesRepo).
+		WithRegistrationCSVExporter(registrationsRepo, registrationCSVExportsRepo)
 
 	slog.Default().InfoContext(ctx, "worker.start",
 		"worker_id", workerID,

@@ -1,8 +1,9 @@
 package worker
 
 import (
+	cryptorand "crypto/rand"
 	"math"
-	"math/rand"
+	"math/big"
 	"time"
 )
 
@@ -22,6 +23,24 @@ func ExponentialBackoff(attempt int) time.Duration {
 	}
 
 	// small jitter (0–250ms) to avoid thundering herd
-	delay += time.Duration(rand.Intn(250)) * time.Millisecond
+	delay += jitterDuration(250 * time.Millisecond)
 	return delay
+}
+
+func jitterDuration(max time.Duration) time.Duration {
+	if max <= 0 {
+		return 0
+	}
+
+	maxJitter := int64(max / time.Millisecond)
+	if maxJitter <= 0 {
+		return 0
+	}
+
+	n, err := cryptorand.Int(cryptorand.Reader, big.NewInt(maxJitter))
+	if err != nil {
+		return 0
+	}
+
+	return time.Duration(n.Int64()) * time.Millisecond
 }

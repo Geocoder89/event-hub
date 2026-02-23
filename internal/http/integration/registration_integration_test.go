@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -46,11 +45,7 @@ func setupTestRouter(t *testing.T) (*gin.Engine, *pgxpool.Pool) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
-	dsn := os.Getenv("TEST_DB_DSN")
-	if dsn == "" {
-		// default for local dev (your docker-compose)
-		dsn = "postgres://eventhub:eventhub@127.0.0.1:5433/eventhub?sslmode=disable"
-	}
+	dsn := requiredTestDBDSN(t)
 
 	ctx := context.Background()
 

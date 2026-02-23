@@ -80,8 +80,8 @@ func (m *JobMetrics) Snapshot() JobMetricsSnapShot {
 
 	var avg time.Duration
 
-	if count > 0 {
-		avg = time.Duration(total / int64(count))
+	if count > 0 && total > 0 {
+		avg = time.Duration(float64(total) / float64(count))
 	}
 
 	return JobMetricsSnapShot{

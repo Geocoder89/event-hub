@@ -39,6 +39,9 @@ func Load() Config {
 	jwtSecret := getEnv("JWT_SECRET", "dev-secret-change-me")
 	jwtTTL := getEnvInt("JWT_ACCESS_TTL_MINUTES", 60)
 	jwtRefreshTTLDays := getEnvInt("JWT_REFRESH_TTL_DAYS", 14)
+	redisAddr := getEnv("REDIS_ADDR", "127.0.0.1:6379")
+	redisPassword := getEnv("REDIS_PASSWORD", "")
+	redisDB := getEnvInt("REDIS_DB", 0)
 
 	return Config{
 		Env:                 env,
@@ -51,6 +54,9 @@ func Load() Config {
 		JWTSecret:           jwtSecret,
 		JWTAccessTTLMinutes: jwtTTL,
 		JWTRefreshTTLDays:   jwtRefreshTTLDays,
+		RedisAddr:           redisAddr,
+		RedisPassword:       redisPassword,
+		RedisDB:             redisDB,
 	}
 }
 

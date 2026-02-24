@@ -66,17 +66,18 @@ type Config struct {
 }
 
 type Worker struct {
-	cfg          Config
-	repo         JobsRepository
-	events       EventsRepository
-	metrics      *observability.JobMetrics
-	regsExport   RegistrationsExportReader
-	csvExports   RegistrationCSVExportsWriter
-	notifier     notifications.Notifier
-	deliveries   *postgres.NotificationsDeliveriesRepo
-	readyMu      sync.RWMutex
-	ready        bool
-	PromRegistry *prometheus.Registry
+	cfg            Config
+	repo           JobsRepository
+	events         EventsRepository
+	metrics        *observability.JobMetrics
+	regsExport     RegistrationsExportReader
+	csvExports     RegistrationCSVExportsWriter
+	notifier       notifications.Notifier
+	deliveries     *postgres.NotificationsDeliveriesRepo
+	readyMu        sync.RWMutex
+	ready          bool
+	readinessCheck func(ctx context.Context) error
+	PromRegistry   *prometheus.Registry
 }
 
 func optional(v *string) string {
@@ -129,6 +130,11 @@ func New(cfg Config, repo JobsRepository, events EventsRepository, notifier noti
 func (w *Worker) WithRegistrationCSVExporter(reader RegistrationsExportReader, writer RegistrationCSVExportsWriter) *Worker {
 	w.regsExport = reader
 	w.csvExports = writer
+	return w
+}
+
+func (w *Worker) WithReadinessCheck(check func(ctx context.Context) error) *Worker {
+	w.readinessCheck = check
 	return w
 }
 

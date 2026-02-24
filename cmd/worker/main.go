@@ -79,7 +79,10 @@ func main() {
 		LockTTL:       30 * time.Second,
 		HealthAddr:    healthAddr,
 	}, jobsRepo, eventsRepo, notifier, deliveriesRepo).
-		WithRegistrationCSVExporter(registrationsRepo, registrationCSVExportsRepo)
+		WithRegistrationCSVExporter(registrationsRepo, registrationCSVExportsRepo).
+		WithReadinessCheck(func(cctx context.Context) error {
+			return pool.Ping(cctx)
+		})
 
 	slog.Default().InfoContext(ctx, "worker.start",
 		"worker_id", workerID,

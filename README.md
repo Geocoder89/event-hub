@@ -228,7 +228,9 @@ Project Structure
 
 - db/migrations – Goose migration files.
 
-- docker-compose.yml – local infrastructure (Postgres).
+- docker-compose.yml – local stack (API, worker, Postgres, Redis, observability).
+
+- Dockerfile – multi-stage build for API and worker images.
 
 - Makefile – developer workflows (run, dev, test, migrate-up, etc.).
 
@@ -256,10 +258,10 @@ go install github.com/air-verse/air@latest
 
 <h3>Running the app locally<h3>
 
-1. Start Postgres with Docker Compose:
+1. Start local dependencies:
 
 ```bash
-docker compose up -d
+docker compose up -d db redis
 ```
 
 2. Apply database migrations:
@@ -280,7 +282,30 @@ make run
 make dev
 ```
 
-The server will start on the port configured in your environment (default 5000).
+4. Run the worker (separate terminal)
+
+```bash
+make worker
+```
+
+The API server starts on the configured `PORT` (default `8080`).
+
+<h3>Running the full stack with Docker<h3>
+
+```bash
+# Builds API + worker images from the multi-stage Dockerfile and starts all services.
+docker compose up -d
+
+# If 8080 is already in use on your machine:
+API_HOST_PORT=18080 docker compose up -d api worker
+```
+
+Helpful checks:
+
+```bash
+curl -s http://localhost:8080/healthz
+docker compose exec worker wget -qO- http://127.0.0.1:8081/readyz
+```
 
 **Validation & Input Hardening**
 
@@ -297,7 +322,7 @@ Unit + integration tests use the same Postgres instance defined in docker-compos
 1. Ensure Postgres is running and migrations are applied:
 
 ```bash
-docker compose up -d
+docker compose up -d db redis
 make migrate-up
 ```
 

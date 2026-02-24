@@ -1,7 +1,9 @@
 package worker
 
 import (
+	"context"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
@@ -32,6 +34,20 @@ func (w *Worker) HealthHandler(reg *prometheus.Registry) http.Handler {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready"})
 			return
 		}
+
+		if w.readinessCheck != nil {
+			checkCtx, cancel := context.WithTimeout(c.Request.Context(), time.Second)
+			defer cancel()
+
+			if err := w.readinessCheck(checkCtx); err != nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"status": "dependency_unavailable",
+					"error":  err.Error(),
+				})
+				return
+			}
+		}
+
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
 

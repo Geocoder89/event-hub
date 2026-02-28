@@ -30,6 +30,11 @@ func main() {
 	// start up the observability logger
 	log := observability.NewLogger(cfg.Env)
 
+	if err := config.ValidateForAPI(cfg); err != nil {
+		log.Error("invalid configuration", "err", err)
+		os.Exit(1)
+	}
+
 	pool, err := db.NewPool(cfg.DBURL)
 
 	if err != nil {

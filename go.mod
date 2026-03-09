@@ -1,7 +1,7 @@
 module github.com/geocoder89/eventhub
 
 go 1.24.0
-toolchain go1.25.7
+toolchain go1.25.8
 
 require (
 	github.com/gin-gonic/gin v1.11.0

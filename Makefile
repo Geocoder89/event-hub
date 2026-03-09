@@ -2,7 +2,7 @@ leAPP_NAME   := eventhub
 GOOSE_DIR  := db/migrations
 AIR        := $(shell go env GOPATH)/bin/air
 
-.PHONY: up down build run dev fmt vet tidy migrate migrate-up migrate-down test lint check-db-env gosec govuln security day83 day85-preflight day86 day87 day88 day89
+.PHONY: up down build run dev fmt vet tidy migrate migrate-up migrate-down test lint check-db-env gosec govuln security day83 day85-preflight day86 day87 day88 day89 day90 day91 day92 day93 day94
 
 -include .env
 export
@@ -93,3 +93,18 @@ day88:
 
 day89:
 	bash ./scripts/day89_etag_cache_regression.sh
+
+day90:
+	bash ./scripts/day90_worker_reliability.sh
+
+day91:
+	bash ./scripts/day91_slo_alerts.sh
+
+day92:
+	bash ./scripts/day92_dependency_failure_drill.sh
+
+day93:
+	bash ./scripts/day93_idempotency_checks.sh
+
+day94:
+	bash ./scripts/day94_k6_rebaseline.sh

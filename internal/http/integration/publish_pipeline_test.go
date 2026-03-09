@@ -3,6 +3,7 @@ package integration__test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -118,5 +119,82 @@ func TestPublishPipeline_EndToEnd(t *testing.T) {
 	}
 	if publishedAt == nil {
 		t.Fatalf("expected published_at to be set")
+	}
+}
+
+func TestPublishPipeline_IdempotentEnqueue(t *testing.T) {
+	router, pool, cfg := setupPipelineTestRouter(t)
+	resetPipelineDB(t, pool)
+	defer resetPipelineDB(t, pool)
+
+	eventID := seedEvent(t, pool, 2)
+
+	jwtManager := auth.NewManager(cfg.JWTSecret, 60*time.Minute, 7*24*time.Hour)
+	adminID := uuid.NewString()
+	token, err := jwtManager.GenerateAccessToken(adminID, "admin-idempotent@example.com", "admin")
+	if err != nil {
+		t.Fatalf("token: %v", err)
+	}
+
+	callPublish := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/admin/events/"+eventID+"/publish", bytes.NewBufferString(`{}`))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w
+	}
+
+	w1 := callPublish()
+	if w1.Code != http.StatusAccepted {
+		t.Fatalf("first publish got %d body=%s", w1.Code, w1.Body.String())
+	}
+
+	w2 := callPublish()
+	if w2.Code != http.StatusAccepted {
+		t.Fatalf("second publish got %d body=%s", w2.Code, w2.Body.String())
+	}
+
+	var resp1 struct {
+		JobID           string `json:"jobId"`
+		Status          string `json:"status"`
+		Type            string `json:"type"`
+		AlreadyEnqueued bool   `json:"alreadyEnqueued"`
+	}
+	if err := json.Unmarshal(w1.Body.Bytes(), &resp1); err != nil {
+		t.Fatalf("decode first publish response: %v body=%s", err, w1.Body.String())
+	}
+
+	var resp2 struct {
+		JobID           string `json:"jobId"`
+		Status          string `json:"status"`
+		Type            string `json:"type"`
+		AlreadyEnqueued bool   `json:"alreadyEnqueued"`
+	}
+	if err := json.Unmarshal(w2.Body.Bytes(), &resp2); err != nil {
+		t.Fatalf("decode second publish response: %v body=%s", err, w2.Body.String())
+	}
+
+	if resp1.JobID == "" {
+		t.Fatalf("expected jobId from first publish")
+	}
+	if resp2.JobID != resp1.JobID {
+		t.Fatalf("expected duplicate publish to return same job id, first=%s second=%s", resp1.JobID, resp2.JobID)
+	}
+	if resp2.AlreadyEnqueued != true {
+		t.Fatalf("expected second publish alreadyEnqueued=true, got=%v", resp2.AlreadyEnqueued)
+	}
+
+	var jobsCount int
+	err = pool.QueryRow(context.Background(), `
+		SELECT COUNT(*)
+		FROM jobs
+		WHERE idempotency_key = $1
+	`, "publish:event:"+eventID).Scan(&jobsCount)
+	if err != nil {
+		t.Fatalf("count publish jobs: %v", err)
+	}
+	if jobsCount != 1 {
+		t.Fatalf("expected exactly one publish job row, got %d", jobsCount)
 	}
 }

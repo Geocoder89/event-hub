@@ -1,0 +1,67 @@
+groups:
+  - name: eventhub-api-slo
+    interval: 30s
+    rules:
+      - alert: EventHubAPIHigh5xxRate
+        expr: |
+          (
+            sum(rate(eventhub_http_requests_total{status=~"5..", route!="/metrics"}[5m]))
+            /
+            clamp_min(sum(rate(eventhub_http_requests_total{route!="/metrics"}[5m])), 0.001)
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          service: eventhub-api
+        annotations:
+          summary: "API 5xx ratio is above 5%"
+          description: "HTTP 5xx ratio stayed above 5% for 10m."
+
+      - alert: EventHubAPIP95LatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(eventhub_http_request_duration_seconds_bucket{route!="/metrics"}[5m])
+            )
+          ) > 0.75
+        for: 10m
+        labels:
+          severity: warning
+          service: eventhub-api
+        annotations:
+          summary: "API p95 latency is high"
+          description: "p95 request latency has been above 750ms for 10m."
+
+  - name: eventhub-worker-reliability
+    interval: 30s
+    rules:
+      - alert: EventHubWorkerDown
+        expr: up{job="eventhub-worker"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: eventhub-worker
+        annotations:
+          summary: "Worker target is down"
+          description: "Prometheus cannot scrape eventhub-worker for 2 minutes."
+
+      - alert: EventHubWorkerDBErrorsBurst
+        expr: sum(rate(eventhub_db_errors_total{job="eventhub-worker"}[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          service: eventhub-worker
+        annotations:
+          summary: "Worker DB errors are elevated"
+          description: "DB error rate from worker-side operations is elevated for 10m."
+
+      - alert: EventHubWorkerNoClaimActivity
+        expr: increase(eventhub_db_query_duration_seconds_count{job="eventhub-worker", op="jobs.claim_next"}[10m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+          service: eventhub-worker
+        annotations:
+          summary: "Worker has no claim activity"
+          description: "No jobs.claim_next DB activity has been observed for 10m."

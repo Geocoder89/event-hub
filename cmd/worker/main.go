@@ -86,6 +86,7 @@ func main() {
 		WithReadinessCheck(func(cctx context.Context) error {
 			return pool.Ping(cctx)
 		})
+	w.PromRegistry = reg
 
 	slog.Default().InfoContext(ctx, "worker.start",
 		"worker_id", workerID,

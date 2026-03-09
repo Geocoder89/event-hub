@@ -112,6 +112,7 @@ func (h *JobsHandler) PublishEvent(ctx *gin.Context) {
 
 			if gerr != nil {
 				RespondInternal(ctx, "Could not enqueue job")
+				return
 			}
 
 			ctx.JSON(http.StatusAccepted, gin.H{
@@ -180,16 +181,43 @@ func (h *JobsHandler) ExportRegistrationsCSV(ctx *gin.Context) {
 
 	cctx, cancel := config.WithTimeout(2 * time.Second)
 	defer cancel()
+	key := "registrations:export_csv:event:" + eventID + ":user:" + userID
 
 	j, err := h.jobs.Create(cctx, job.CreateRequest{
-		Type:        jobs.TypeRegistrationsExportCSV,
-		Payload:     json.RawMessage(raw),
-		RunAt:       time.Now().UTC(),
-		MaxAttempts: 10,
-		UserID:      &userID,
-		Priority:    1,
+		Type:           jobs.TypeRegistrationsExportCSV,
+		Payload:        json.RawMessage(raw),
+		RunAt:          time.Now().UTC(),
+		MaxAttempts:    10,
+		IdempotencyKey: &key,
+		UserID:         &userID,
+		Priority:       1,
 	})
 	if err != nil {
+		if postgres.IsUniqueViolation(err) {
+			existing, gerr := h.jobs.GetByIdempotencyKey(cctx, key)
+			if gerr != nil {
+				RespondInternal(ctx, "Could not enqueue job")
+				return
+			}
+
+			ctx.Set(middlewares.CtxJobID, existing.ID)
+			slog.Default().InfoContext(cctx, "job.enqueue",
+				"request_id", requestIDFrom(ctx),
+				"job_id", existing.ID,
+				"job_type", existing.Type,
+				"already_enqueued", true,
+			)
+
+			ctx.JSON(http.StatusAccepted, gin.H{
+				"jobId":           existing.ID,
+				"status":          existing.Status,
+				"type":            existing.Type,
+				"downloadPath":    "/admin/jobs/" + existing.ID + "/registrations-export.csv",
+				"alreadyEnqueued": true,
+			})
+			return
+		}
+
 		RespondInternal(ctx, "Could not enqueue job")
 		return
 	}

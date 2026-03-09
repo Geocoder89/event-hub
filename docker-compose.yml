@@ -39,6 +39,11 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
 
   worker:
@@ -57,6 +62,8 @@ services:
       DB_SSLMODE: disable
       WORKER_HEALTH_ADDR: ":8081"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-jaeger:4317}
+    ports:
+      - "${WORKER_HOST_PORT:-8081}:8081"
     depends_on:
       db:
         condition: service_healthy
@@ -67,6 +74,11 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
 
   db:
@@ -124,6 +136,7 @@ services:
       - '9090:9090'
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts:/etc/prometheus/alerts:ro
     command:
     - '--config.file=/etc/prometheus/prometheus.yml'
     - '--web.enable-remote-write-receiver'

@@ -642,12 +642,21 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RegistrationsExportJobAcceptedResponse"
-              example:
-                jobId: 5fd3fb59-f249-4ea2-9c01-76ee32e48efe
-                status: pending
-                type: registrations.export_csv
-                downloadPath: /admin/jobs/5fd3fb59-f249-4ea2-9c01-76ee32e48efe/registrations-export.csv
-                alreadyEnqueued: false
+              examples:
+                created:
+                  value:
+                    jobId: 5fd3fb59-f249-4ea2-9c01-76ee32e48efe
+                    status: pending
+                    type: registrations.export_csv
+                    downloadPath: /admin/jobs/5fd3fb59-f249-4ea2-9c01-76ee32e48efe/registrations-export.csv
+                    alreadyEnqueued: false
+                alreadyEnqueued:
+                  value:
+                    jobId: 5fd3fb59-f249-4ea2-9c01-76ee32e48efe
+                    status: pending
+                    type: registrations.export_csv
+                    downloadPath: /admin/jobs/5fd3fb59-f249-4ea2-9c01-76ee32e48efe/registrations-export.csv
+                    alreadyEnqueued: true
         "400":
           $ref: "#/components/responses/Error"
         "401":

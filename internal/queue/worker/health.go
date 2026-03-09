@@ -52,7 +52,11 @@ func (w *Worker) HealthHandler(reg *prometheus.Registry) http.Handler {
 	})
 
 	// Prometheus
-	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	if reg != nil {
+		r.GET("/metrics", gin.WrapH(promhttp.HandlerFor(reg, promhttp.HandlerOpts{})))
+	} else {
+		r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	}
 
 	return r
 }

@@ -217,3 +217,83 @@ func TestPipeline_RegistrationsCSVExport_EnqueueProcessDownload(t *testing.T) {
 		t.Fatalf("expected exported emails not found: %+v", emails)
 	}
 }
+
+func TestPipeline_RegistrationsCSVExport_IdempotentEnqueue(t *testing.T) {
+	router, pool, _ := setupPipelineRouter(t)
+	resetPipelineDB(t, pool)
+	defer resetPipelineDB(t, pool)
+
+	eventID := seedEvent(t, pool, 50)
+	adminToken := createAdminAuthToken(t, router, pool, "admin-export-idempotent@example.com")
+
+	first := doAuthedJSONRequest(
+		router,
+		http.MethodPost,
+		"/admin/events/"+eventID+"/registrations/export",
+		`{}`,
+		adminToken,
+	)
+	if first.Code != http.StatusAccepted {
+		t.Fatalf("first enqueue got status=%d body=%s", first.Code, first.Body.String())
+	}
+
+	second := doAuthedJSONRequest(
+		router,
+		http.MethodPost,
+		"/admin/events/"+eventID+"/registrations/export",
+		`{}`,
+		adminToken,
+	)
+	if second.Code != http.StatusAccepted {
+		t.Fatalf("second enqueue got status=%d body=%s", second.Code, second.Body.String())
+	}
+
+	var firstResp struct {
+		JobID           string `json:"jobId"`
+		Status          string `json:"status"`
+		Type            string `json:"type"`
+		DownloadPath    string `json:"downloadPath"`
+		AlreadyEnqueued bool   `json:"alreadyEnqueued"`
+	}
+	if err := json.Unmarshal(first.Body.Bytes(), &firstResp); err != nil {
+		t.Fatalf("decode first enqueue response: %v body=%s", err, first.Body.String())
+	}
+
+	var secondResp struct {
+		JobID           string `json:"jobId"`
+		Status          string `json:"status"`
+		Type            string `json:"type"`
+		DownloadPath    string `json:"downloadPath"`
+		AlreadyEnqueued bool   `json:"alreadyEnqueued"`
+	}
+	if err := json.Unmarshal(second.Body.Bytes(), &secondResp); err != nil {
+		t.Fatalf("decode second enqueue response: %v body=%s", err, second.Body.String())
+	}
+
+	if firstResp.JobID == "" {
+		t.Fatalf("expected first enqueue jobId")
+	}
+	if secondResp.JobID != firstResp.JobID {
+		t.Fatalf("expected duplicate export to return same job id, first=%s second=%s", firstResp.JobID, secondResp.JobID)
+	}
+	if firstResp.AlreadyEnqueued {
+		t.Fatalf("expected first enqueue alreadyEnqueued=false")
+	}
+	if !secondResp.AlreadyEnqueued {
+		t.Fatalf("expected second enqueue alreadyEnqueued=true")
+	}
+
+	var jobsCount int
+	err := pool.QueryRow(context.Background(), `
+		SELECT COUNT(*)
+		FROM jobs
+		WHERE type = 'registrations.export_csv'
+		  AND payload->>'eventId' = $1
+	`, eventID).Scan(&jobsCount)
+	if err != nil {
+		t.Fatalf("count export jobs: %v", err)
+	}
+	if jobsCount != 1 {
+		t.Fatalf("expected exactly one export job row, got %d", jobsCount)
+	}
+}

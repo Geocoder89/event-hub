@@ -29,7 +29,12 @@ func main() {
 	defer stop()
 
 	// 1) init tracing first (so all spans/logs can attach)
-	shutdownTracer, err := observability.InitTracer(context.Background(), "eventhub-worker", "localhost:4317")
+	otlpEndpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if otlpEndpoint == "" {
+		otlpEndpoint = "localhost:4317"
+	}
+
+	shutdownTracer, err := observability.InitTracer(context.Background(), "eventhub-worker", otlpEndpoint)
 	if err != nil {
 		log.Fatalf("otel init failed: %v", err)
 	}

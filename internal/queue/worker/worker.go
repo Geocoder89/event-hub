@@ -88,15 +88,28 @@ func optional(v *string) string {
 }
 
 func requestIDFromPayload(payload []byte) string {
-	var carrier struct {
-		RequestID string `json:"requestId"`
-	}
-
-	if err := json.Unmarshal(payload, &carrier); err != nil {
+	carrier, err := traceCarrierFromPayload(payload)
+	if err != nil {
 		return ""
 	}
 
 	return carrier.RequestID
+}
+
+type traceCarrier struct {
+	RequestID      string `json:"requestId"`
+	EventID        string `json:"eventId"`
+	RegistrationID string `json:"registrationId"`
+	RequestedBy    string `json:"requestedBy"`
+	UserID         string `json:"userId"`
+}
+
+func traceCarrierFromPayload(payload []byte) (traceCarrier, error) {
+	var carrier traceCarrier
+	if err := json.Unmarshal(payload, &carrier); err != nil {
+		return traceCarrier{}, err
+	}
+	return carrier, nil
 }
 
 func requestIDFromContext(ctx context.Context) string {
@@ -303,14 +316,21 @@ func (w *Worker) runWorker(ctx context.Context, workerNum int, jobsChan <-chan j
 
 	for j := range jobsChan {
 		start := time.Now()
+		carrier, _ := traceCarrierFromPayload(j.Payload)
 
 		// Build execCtx (actor context etc.)
 		execCtx := ctx
-		if reqID := requestIDFromPayload(j.Payload); reqID != "" {
+		if carrier.RequestID != "" {
+			execCtx = actorctx.WithRequestID(execCtx, carrier.RequestID)
+		} else if reqID := requestIDFromPayload(j.Payload); reqID != "" {
 			execCtx = actorctx.WithRequestID(execCtx, reqID)
 		}
 		if j.UserID != nil && *j.UserID != "" {
 			execCtx = actorctx.WithUserID(execCtx, *j.UserID)
+		} else if carrier.RequestedBy != "" {
+			execCtx = actorctx.WithUserID(execCtx, carrier.RequestedBy)
+		} else if carrier.UserID != "" {
+			execCtx = actorctx.WithUserID(execCtx, carrier.UserID)
 		}
 
 		reqID := requestIDFromContext(execCtx)
@@ -326,6 +346,19 @@ func (w *Worker) runWorker(ctx context.Context, workerNum int, jobsChan <-chan j
 		}
 		if reqID != "" {
 			spanAttrs = append(spanAttrs, attribute.String("request.id", reqID))
+		}
+		if j.UserID != nil && *j.UserID != "" {
+			spanAttrs = append(spanAttrs, attribute.String("user.id", *j.UserID))
+		} else if carrier.RequestedBy != "" {
+			spanAttrs = append(spanAttrs, attribute.String("user.id", carrier.RequestedBy))
+		} else if carrier.UserID != "" {
+			spanAttrs = append(spanAttrs, attribute.String("user.id", carrier.UserID))
+		}
+		if carrier.EventID != "" {
+			spanAttrs = append(spanAttrs, attribute.String("event.id", carrier.EventID))
+		}
+		if carrier.RegistrationID != "" {
+			spanAttrs = append(spanAttrs, attribute.String("registration.id", carrier.RegistrationID))
 		}
 
 		execCtx, span := tracer.Start(execCtx, "job.run",

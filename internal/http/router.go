@@ -44,6 +44,7 @@ func NewRouter(log *slog.Logger, pool *pgxpool.Pool, cfg config.Config) *gin.Eng
 	r.Use(gin.Recovery())
 	r.Use(middlewares.RequestID())
 	r.Use(otelgin.Middleware("eventhub-api"))
+	r.Use(middlewares.TraceEnrichment())
 	r.Use(prom.GinHandleMiddleware())
 	r.Use(middlewares.RequestLogger())
 	r.Use(middlewares.CORSMiddleware([]string{

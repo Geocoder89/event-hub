@@ -1,0 +1,165 @@
+services:
+  api:
+    image: eventhub-day99-api:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    container_name: eventhub-day99-api
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+      PORT: ${PORT:-8080}
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: ${POSTGRES_USER:-eventhub}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-eventhub}
+      DB_NAME: ${POSTGRES_DB:-eventhub}
+      DB_SSLMODE: disable
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB:-0}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+      ADMIN_NAME: ${ADMIN_NAME:-EventHub Admin}
+      ADMIN_ROLE: ${ADMIN_ROLE:-admin}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      JWT_ACCESS_TTL_MINUTES: ${JWT_ACCESS_TTL_MINUTES:-60}
+      JWT_REFRESH_TTL_DAYS: ${JWT_REFRESH_TTL_DAYS:-14}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-jaeger:4317}
+    ports:
+      - "18080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+  worker:
+    image: eventhub-day99-worker:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    container_name: eventhub-day99-worker
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: ${POSTGRES_USER:-eventhub}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-eventhub}
+      DB_NAME: ${POSTGRES_DB:-eventhub}
+      DB_SSLMODE: disable
+      WORKER_HEALTH_ADDR: ":8081"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-jaeger:4317}
+    ports:
+      - "18081:8081"
+    depends_on:
+      db:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+  db:
+    image: postgres:16
+    container_name: eventhub-day99-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-eventhub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-eventhub}
+      POSTGRES_DB: ${POSTGRES_DB:-eventhub}
+    ports:
+      - "127.0.0.1:15433:5432"
+    volumes:
+      - eventhub_pgdata:/var/lib/postgresql/data
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_preload_libraries=pg_stat_statements"
+      - "-c"
+      - "pg_stat_statements.track=all"
+      - "-c"
+      - "pg_stat_statements.max=10000"
+      - "-c"
+      - "pg_stat_statements.save=on"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eventhub -d eventhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: eventhub-day99-redis
+    ports:
+      - "16379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.54
+    container_name: eventhub-day99-jaeger
+    ports:
+      - "16687:16686"
+      - "14317:4317"
+      - "14318:4318"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: eventhub-day99-prometheus
+    ports:
+      - "19090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts:/etc/prometheus/alerts:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.enable-remote-write-receiver"
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: eventhub-day99-grafana
+    ports:
+      - "13001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
+volumes:
+  eventhub_pgdata:
+  redis-data:

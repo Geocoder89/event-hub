@@ -1,7 +1,8 @@
 .DS_Store
 .env
 bin/
+/api
+/worker
 # Air hot-reload build output
 tmp/
 *.tmp
-

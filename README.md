@@ -1,425 +1,232 @@
-# EventHub (Go)
+# EventHub
 
-EventHub is a production-oriented Go backend API focused on clean structure, database persistence, and repeatable local development. I’m building it in public as part of a **100 Days of Go** learning series.
+A production-oriented backend platform built in **Go** and **PostgreSQL**, focused on authentication, authorization, transactional workflows, background processing, observability, testing, and operational reliability.
 
-The goal is to practice “real” backend work in Go: routing, domain modeling, persistence, migrations, transactions, validation, and testing.
+EventHub exposes APIs for managing events and registrations, protects user-owned resources with JWT-based authentication and authorization, and runs asynchronous jobs through a PostgreSQL-backed worker model.
 
----
+## Engineering Highlights
+
+- **Authentication and sessions:** short-lived JWT access tokens, DB-backed refresh-token rotation, HttpOnly refresh cookies, hashed refresh-token storage, logout revocation, and protected routes.
+- **Authorization:** ownership checks on protected operations with administrative override where appropriate.
+- **Concurrency and consistency:** PostgreSQL transactions and row locking for capacity-sensitive registration flows and refresh-token rotation.
+- **Background processing:** persisted jobs, `FOR UPDATE SKIP LOCKED` claiming, retry scheduling, failure recording, and idempotent publish workflows.
+- **Observability:** structured logging, request IDs, OpenTelemetry instrumentation, Prometheus metrics, and Grafana monitoring assets.
+- **Quality gates:** GitHub Actions CI runs database migrations, `go vet`, builds, tests, `golangci-lint`, `gosec`, `govulncheck`, and Docker image builds.
+- **Performance work:** k6 smoke/baseline load tests and repository-backed performance investigation notes.
 
 ## Tech Stack
 
-- **Language:** Go
-- **Web framework:** Gin
-- **Database:** PostgreSQL
-- **Migrations:** Goose
-- **Dev tooling:** Docker Compose, Air (hot reload)
-- **Logging:** `log/slog`
-- **Testing:** `go test` (unit + integration), `httptest`, pgx
-- **Auth**: JWT (access + refresh), refresh-token rotation (DB-backed)
-- **Password Hashing**: bcrypt (via internal/security)
-- **Cookies**: HttpOnly refresh cookie (refresh_token)
+| Area | Technology |
+|---|---|
+| Language | Go |
+| HTTP | Gin |
+| Database | PostgreSQL + pgx |
+| Migrations | Goose |
+| Authentication | JWT access + refresh tokens |
+| Password hashing | bcrypt |
+| Background jobs | PostgreSQL-backed worker |
+| Observability | OpenTelemetry, Prometheus, Grafana, structured `slog` |
+| Testing | `go test`, `httptest`, PostgreSQL integration tests |
+| Delivery | Docker, Docker Compose, GitHub Actions |
 
----
+## Core Capabilities
 
-## Features (so far)
+### Health and readiness
 
-### Health & readiness
+- `GET /healthz` — liveness check.
+- `GET /readyz` — readiness check with a bounded PostgreSQL ping.
 
-- `GET /healthz` – basic liveness check.
-- `GET /readyz` – readiness check that pings Postgres with a timeout.
+### Authentication and session management
 
-Authentication & Sessions (JWT + refresh rotation)
+EventHub uses short-lived access tokens with long-lived refresh tokens that are rotated on refresh.
 
-EventHub uses short-lived access tokens and long-lived refresh tokens with rotation.
-
-Endpoints
-
-- POST /signup
-  Creates a user (default role: user) and returns:
-
-  - accessToken in JSON response
-  - refresh_token as an HttpOnly cookie
-
-  Request Body:
-
-  ```json
-  {
-    "email": "sam@example.com",
-    "password": "strong-password",
-    "name": "Sam Example"
-  }
-  ```
-
-````
-
-POST /login
-Verifies email/password and returns:
-  * accessToken in JSON
-  * refresh_token as an HttpOnly cookie
-
-  ```json
-  {
-  "email": "sam@example.com",
-  "password": "strong-password"
-}
-````
-
-- POST /auth/refresh
-  Uses the refresh_token cookie to:
-
-- Validate the refresh token
-- Rotate it (revoke old token, issue new token)
-- Return a new accessToken in JSON
-- Set a new refresh_token cookie
-
-- POST /auth/logout
-  Revokes the current refresh token (best-effort) and clears the cookie.
-
-Response body
-
-```json
-{ "accessToken": "<new_access_token>" }
-```
-
-How to call protected endpoints
+- `POST /signup` — creates a user and starts an authenticated session.
+- `POST /login` — validates credentials and returns an access token.
+- `POST /auth/refresh` — rotates the refresh token and returns a new access token.
+- `POST /auth/logout` — revokes the current refresh session and clears the refresh cookie.
 
 Protected routes require:
 
-```makefile
+```http
 Authorization: Bearer <accessToken>
 ```
 
-Access token claims are verified by middleware; userID, email, and role are attached to the request context.
-
-**Refresh token storage**
-
-Refresh tokens are stored hashed in Postgres and tracked for rotation:
-
-- refresh_tokens table stores:
-
-- token id (jti), user_id, token_hash, expires_at
-- revoked_at, replaced_by (rotation metadata)
-
-Implementation highlights:
-
-- Refresh rotation uses a transaction + row lock (SELECT ... FOR UPDATE) to prevent reuse / race conditions.
-- Raw refresh tokens are never stored in the database (only hashes).
+Refresh tokens are stored **hashed** in PostgreSQL. Rotation runs inside a transaction and locks the relevant row with `SELECT ... FOR UPDATE` to prevent concurrent reuse.
 
 ### Events API
 
-CRUD + filtering for events:
+- `POST /events` — create an event.
+- `GET /events` — list events with pagination and optional city, text, and date filters.
+- `GET /events/:id` — retrieve one event.
+- `PUT /events/:id` — update an event.
+- `DELETE /events/:id` — delete an event.
 
-- `POST /events`
-  - Create an event (title, description, city, startAt, capacity, etc.).
-- `GET /events`
-  - List events with:
-    - Pagination: `page`, `limit`
-    - Optional filters: `city`, `q` (full-text), `from`, `to` (RFC3339)
-- `GET /events/:id`
-  - Fetch a single event by ID.
-- `PUT /events/:id`
-  - Update an existing event.
-- `DELETE /events/:id`
-  - Delete an event.
+The implementation separates HTTP handling, domain models, and PostgreSQL repositories. Full-text-search and query-plan investigation artifacts are available under [`perf/day68`](./perf/day68).
 
-Implementation details:
+### Registrations and ownership
 
-- Domain model + DTOs in `internal/domain/event`.
-- Postgres repository in `internal/repo/postgres`.
-- Versioned migrations for the `events` table via Goose.
-- Standardized JSON error responses across handlers.
-
-FTS indexing and query-plan notes:
-- `/Users/oladelemoarukhe/Documents/codes/event-hub/eventhub/perf/day68/README.md`
-
-### Registrations API
-
-Users can register for events by email.
+Authenticated users can register for events while the service enforces duplicate-registration and capacity constraints.
 
 - `POST /events/:id/register`
-  Requires Authorization: Bearer <accessToken>  
-   Request body:
+- `DELETE /events/:id/registrations/:registrationId`
 
-  ```json
-  {
-    "name": "Sam Example",
-    "email": "sam@example.com"
-  }
-  ```
+Registration creation uses transactional database logic and row locking to prevent capacity races. Cancellation enforces ownership, with administrator override supported by the authorization flow.
 
-Behavior:
+### Background jobs and worker
 
-- 201 Created – registration created.
+Asynchronous publish jobs are persisted with lifecycle states such as `pending`, `processing`, `done`, and `failed`.
 
-- 409 Conflict with code: "already_registered" – this email is already registered for that event.
+The worker provides:
 
-- 409 Conflict with code: "event_full" – the event has reached its capacity.
-- 401 Unauthorized – missing/invalid access token
+- concurrent-safe claiming with `FOR UPDATE SKIP LOCKED`;
+- scheduled retries using `run_at`;
+- failure recording through `last_error`;
+- producer-side idempotency keys;
+- consumer-side guards using event publication state.
 
+## Architecture
 
-Cancel registration (ownership enforced)
+```text
+Client
+  │
+  ▼
+Gin HTTP API
+  │
+  ├── Authentication / authorization
+  ├── Event and registration handlers
+  │
+  ▼
+Domain + repository layers
+  │
+  ▼
+PostgreSQL
+  │
+  ├── Application data
+  ├── Refresh sessions
+  └── Background jobs
 
-* DELETE /events/:id/registrations/:registrationId (protected)
-Users can only cancel their own registration. Admin can override.
+Worker ───────────────► PostgreSQL job queue
 
-Responses:
-* 204 No Content – canceled
-* 403 Forbidden – attempting to cancel someone else’s registration
-* 404 Not Found – registration not found
+API / Worker
+  ├── structured logs
+  ├── OpenTelemetry
+  └── Prometheus metrics ──► Grafana
+```
 
-Implementation details:
+## Project Structure
 
-- registrations table:
+```text
+cmd/
+├── api/                    API entrypoint
+└── worker/                 Worker entrypoint
 
-  - id UUID PRIMARY KEY
+internal/
+├── config/                 Environment and runtime configuration
+├── domain/                 Domain models and DTOs
+├── http/                   Router, middleware, and handlers
+├── observability/          Logging, metrics, and tracing
+└── repo/postgres/          PostgreSQL repositories
 
-  - event_id (FK → events(id) with ON DELETE CASCADE)
+db/migrations/              Goose migrations
+monitoring/                 Grafana and alerting configuration
+load-test/                  k6 smoke and baseline tests
+perf/                       Performance investigation artifacts
+postman/                    Postman collection and environment
+docs/                       Reliability and operational notes
+.github/workflows/          CI pipeline
+```
 
-  - name, email
+## Local Development
 
-  - created_at, updated_at
+### Prerequisites
 
-  - UNIQUE (event_id, email) to prevent duplicate registrations per event/email.
-
-  - registrations includes user_id (FK → users)
-
-  - Ownership check enforced in handler (role == admin override)
-
-- Domain model + DTO in internal/domain/registration.
-
-- Postgres repository in internal/repo/postgres with:
-
-  - Transactional logic:
-
-    1. Check if (event_id, email) already exists (SELECT EXISTS).
-
-    2. Lock the event row (FOR UPDATE), compute current registrations, enforce capacity.
-
-    3. Insert registration.
-
-  - Domain errors:
-
-    - ErrAlreadyRegistered
-
-    - ErrEventFull
-
-- Handler in internal/http/handlers:
-
-  - Uses the route param :id as the source of truth for eventId.
-
-Maps domain errors to 409 responses with structured JSON errors.
-
-
-
-
-Project Structure
-
-- cmd/api – application entrypoint (wires config, DB, router, server).
-
-- internal/config – configuration loading (env, port, DB URL, timeouts).
-
-- internal/http – router setup, middleware, and HTTP handlers.
-
-- internal/domain – domain models and DTOs (event, registration, etc.).
-
-- internal/repo/postgres – Postgres-backed repositories (events, registrations).
-
-- internal/observability – logging, request IDs, etc.
-
-- db/migrations – Goose migration files.
-
-- docker-compose.yml – local stack (API, worker, Postgres, Redis, observability).
-
-- Dockerfile – multi-stage build for API and worker images.
-
-- Makefile – developer workflows (run, dev, test, migrate-up, etc.).
-
-Prerequisites
-
-- Go (recommended: 1.25)
-
+- Go
 - Docker + Docker Compose
-
 - Goose CLI
 
-- Air (optional, for hot reload)
-
-<h3>Install Goose<h3>
+Install Goose:
 
 ```bash
 go install github.com/pressly/goose/v3/cmd/goose@latest
 ```
 
-Install Air (optional)
-
-```bash
-go install github.com/air-verse/air@latest
-```
-
-<h3>Running the app locally<h3>
-
-1. Start local dependencies:
+Start dependencies:
 
 ```bash
 docker compose up -d db redis
 ```
 
-2. Apply database migrations:
+Apply migrations:
 
 ```bash
 make migrate-up
-# or
-goose -dir db/migrations postgres "$GOOSE_DBSTRING" up
 ```
 
-3. Run the API
+Run the API:
 
 ```bash
-# Simple run
 make run
+```
 
-# Or with hot reload (Air)
+Or use hot reload:
+
+```bash
 make dev
 ```
 
-4. Run the worker (separate terminal)
+Run the worker in a second terminal:
 
 ```bash
 make worker
 ```
 
-The API server starts on the configured `PORT` (default `8080`).
+The API uses port `8080` by default.
 
-<h3>Running the full stack with Docker<h3>
+## Testing
 
-```bash
-# Builds API + worker images from the multi-stage Dockerfile and starts all services.
-docker compose up -d
-
-# If 8080 is already in use on your machine:
-API_HOST_PORT=18080 docker compose up -d api worker
-```
-
-Helpful checks:
-
-```bash
-curl -s http://localhost:8080/healthz
-docker compose exec worker wget -qO- http://127.0.0.1:8081/readyz
-```
-
-**Validation & Input Hardening**
-
-* Request payload validation via Gin binding tags (required, email, min/max, etc.)
-
-* Path param validation for UUIDs (e.g., /events/:id)
-
-* Consistent JSON error shape across handlers
-
-**Testing**
-
-Unit + integration tests use the same Postgres instance defined in docker-compose.yml.
-
-1. Ensure Postgres is running and migrations are applied:
-
-```bash
-docker compose up -d db redis
-make migrate-up
-```
-
-2. Run Tests
+Run the full Go test suite:
 
 ```bash
 go test ./... -v
 ```
 
-Tests currently cover:
+The CI pipeline additionally validates:
 
-- Handlers (unit tests) for events CRUD (table-driven).
+- PostgreSQL migrations;
+- `go vet`;
+- API and worker builds;
+- unit and integration tests;
+- `golangci-lint`;
+- `gosec`;
+- `govulncheck`;
+- Docker builds for the API and worker targets.
 
-- Registration flow (integration tests) hitting:
+## Manual API Exploration
 
-  - POST /events/:id/register
-
-  - Real Postgres via pgx
-
-  - Scenarios:
-
-    - Happy path (201 Created).
-
-    - Duplicate email (409 already_registered).
-
-    - Event at capacity (409 event_full).
-
-Auth integration tests (in progress / Day 29):
-
-  - signup/login sets refresh cookie
-
-  - refresh rotation returns new access token and rotates cookie
-
-  - logout clears cookie and revokes refresh token
-
-100 Days of Go (build in public)
-
-This repo is part of my ongoing 100 Days of Go series.You can follow my Progress on [LinkedIn](https://www.linkedin.com/in/oladele-omoarukhe/) where I’m continuously posting short daily recaps and screenshots as the project evolves.
-
-## Postman collection
-
-For manual API exploration there is a Postman collection and local environment:
+The repository includes:
 
 - `postman/eventhub-api.postman_collection.json`
 - `postman/eventhub-local.postman_environment.json`
 
-Usage:
+Import both into Postman to exercise signup/login, protected event operations, registration, token refresh, logout, and publish workflows.
 
-1. Import both files into Postman.
-2. Select the **event-hub-local** environment.
-3. Use the collection’s “Create event” request to create an event; scripts will capture the `eventId` into the environment.
-4. Use the other requests (list, get by id, register, etc.) to exercise the API.
+## Performance and Reliability Work
 
-Auth workflow in Postman:
+The repository contains engineering notes and artifacts covering topics such as:
 
-1) Call Signup or Login to receive accessToken and a refresh_token cookie.
+- query-plan and indexing investigation;
+- environment hardening;
+- backup/restore;
+- migration safety;
+- worker reliability;
+- SLO/alert design;
+- dependency-failure drills;
+- load testing.
 
-2) Use accessToken as a Bearer token in protected requests.
+See [`docs/`](./docs), [`perf/`](./perf), and [`load-test/`](./load-test).
 
-3) When access expires, call /auth/refresh (cookie-based) to get a new access token.
+## Project Background
 
-4) Call /auth/logout to invalidate the refresh session.
+EventHub started as part of a **100 Days of Go** build-in-public series and evolved into a broader backend-engineering project focused on production concerns rather than isolated language exercises.
 
-
-**Async Jobs & Worker**
-
-* Jobs are persisted in jobs table with status: pending | processing | done | failed
-
-* Workers claim jobs using Postgres FOR UPDATE SKIP LOCKED
-
-* Retries use exponential backoff by rescheduling run_at
-
-* Dead-lettering is status=failed with last_error
-
-* Publish jobs are idempotent:
-
-   * producer dedupe via idempotency_key
-
-   * consumer guard via events.published_at
-
-*Run Locally
-
-Terminal 1:
-```bash
-make dev
-```
-
-Terminal 2:
-
-```bash
-make worker
-```
-
-Schedule a publish
-
-```
-curl -X POST "http://localhost:8080/events/<id>/publish?runAt=2026-01-15T12:00:00Z" \
-  -H "Authorization: Bearer <token>"
-
-```
+The project is intentionally used to explore how authentication, persistence, concurrency, asynchronous work, observability, CI, and operational practices fit together in a service that can be reasoned about end to end.
